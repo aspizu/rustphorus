@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use sdl2::{
     event::Event,
     image::LoadTexture,
@@ -11,14 +13,20 @@ use state::{load_virtual_machine_state, State};
 
 pub mod state;
 
-extern crate sdl2;
-
-fn load_textures(state: &mut State, texture_creator: &TextureCreator<WindowContext>) {
+fn load_textures<'a>(state: &mut State<'a>, texture_creator: &'a TextureCreator<WindowContext>) {
     for costume in &state.stage.costumes {
         state
             .textures
             .entry(costume.md5ext.clone())
             .or_insert_with(|| texture_creator.load_texture(&costume.md5ext).unwrap());
+    }
+    for sprite in &state.sprites {
+        for costume in &sprite.costumes {
+            state
+                .textures
+                .entry(costume.md5ext.clone())
+                .or_insert_with(|| texture_creator.load_texture(&costume.md5ext).unwrap());
+        }
     }
 }
 
@@ -49,7 +57,7 @@ fn render(state: &mut State, canvas: &mut Canvas<Window>) {
 }
 
 fn main() {
-    let mut state: State = load_virtual_machine_state();
+    let state: State<'_> = load_virtual_machine_state();
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
@@ -60,6 +68,7 @@ fn main() {
     let mut canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
     let texture_creator = canvas.texture_creator();
+    let mut state = state;
     load_textures(&mut state, &texture_creator);
     'main: loop {
         for event in event_pump.poll_iter() {
@@ -71,5 +80,7 @@ fn main() {
             }
         }
         render(&mut state, &mut canvas);
+        canvas.present();
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / state.frame_rate));
     }
 }

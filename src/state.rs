@@ -40,7 +40,7 @@ pub struct Sprite {
     pub x: i32,
     pub y: i32,
     pub size: u32,
-    pub direction: i8,
+    pub direction: f64,
     pub draggable: bool,
     pub current_costume: usize,
     pub rotation_style: RotationStyle,
@@ -81,10 +81,11 @@ pub enum VideoState {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
 pub enum Value {
-    Text(String),
     Integer(i32),
     Float(f64),
+    String(String),
 }
 
 #[derive(Debug)]
@@ -121,8 +122,8 @@ pub struct Block {
     pub opcode: String,
     pub next: Option<String>,
     pub parent: Option<String>,
-    pub inputs: HashMap<String, BlockInput>,
-    pub fields: HashMap<String, BlockField>,
+    //pub inputs: HashMap<String, BlockInput>,
+    //pub fields: HashMap<String, BlockField>,
     pub top_level: bool,
 }
 
@@ -164,7 +165,7 @@ impl<'de> Deserialize<'de> for TargetList {
         impl<'de> Visitor<'de> for TargetListVisitor {
             type Value = TargetList;
 
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "a sequence of a Stage followed by any number of Sprites")
             }
 
