@@ -3,8 +3,8 @@
     {
       "isStage": true,
       "name": "Stage",
-      "variables": {},
-      "lists": {},
+      "variables": { "xlpcM`;ai{p!ZF)*dNwm": ["globalvariable", 0] },
+      "lists": { "18#(x|N;`g_+2=4GIM1,": ["globallist", []] },
       "broadcasts": {},
       "blocks": {},
       "comments": {},
@@ -31,10 +31,49 @@
     {
       "isStage": false,
       "name": "dango",
-      "variables": {},
-      "lists": {},
+      "variables": { "eS@o1Je=Xfz(c^N$.{]O": ["localvariable", 0] },
+      "lists": { "b=ZPd1p!b:=x=J|WQtsU": ["locallist", []] },
       "broadcasts": {},
-      "blocks": {},
+      "blocks": {
+        "c": {
+          "opcode": "event_whenflagclicked",
+          "next": "a",
+          "parent": null,
+          "inputs": {},
+          "fields": {},
+          "shadow": false,
+          "topLevel": true,
+          "x": 140,
+          "y": 201
+        },
+        "d": {
+          "opcode": "motion_changexby",
+          "next": null,
+          "parent": "b",
+          "inputs": { "DX": [1, [4, "10"]] },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        },
+        "a": {
+          "opcode": "motion_gotoxy",
+          "next": "b",
+          "parent": "c",
+          "inputs": { "X": [1, [4, "0"]], "Y": [1, [4, "0"]] },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        },
+        "b": {
+          "opcode": "control_wait",
+          "next": "d",
+          "parent": "a",
+          "inputs": { "DURATION": [1, [5, "1"]] },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        }
+      },
       "comments": {},
       "currentCostume": 0,
       "costumes": [
@@ -52,10 +91,10 @@
       "volume": 100,
       "layerOrder": 1,
       "visible": true,
-      "x": 0,
+      "x": 10,
       "y": 0,
       "size": 100,
-      "direction": 90,
+      "direction": 178.75389377967124,
       "draggable": false,
       "rotationStyle": "all around"
     }

@@ -1,100 +1,75 @@
-#![allow(non_snake_case)]
+use sdl2::{
+    event::Event,
+    image::LoadTexture,
+    pixels::Color,
+    rect::Rect,
+    render::{Canvas, TextureCreator},
+    video::Window,
+    video::WindowContext,
+};
+use state::{load_virtual_machine_state, State};
 
-pub mod sb3;
+pub mod state;
 
 extern crate sdl2;
 
-use sb3::Details;
-use sdl2::event::Event;
-use sdl2::image::LoadTexture;
-use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use std::collections::HashMap;
-use std::process::Command;
-use std::time::Duration;
+fn load_textures(state: &State, texture_creator: TextureCreator<WindowContext>) {
+    for costume in &state.stage.costumes {
+        state
+            .textures
+            .entry(costume.md5ext)
+            .or_insert_with(|| texture_creator.load_texture(costume.md5ext).unwrap());
+    }
+}
+
+fn render(state: &State, canvas: &Canvas<Window>) {
+    canvas.set_draw_color(Color::RGB(255, 255, 255));
+    canvas.clear();
+    let costume = &state.stage.costumes[state.stage.current_costume];
+    let texture = &state.textures[&costume.md5ext];
+    let query = texture.query();
+    let x: i32 = state.stage_width as i32 / 2 - query.width as i32 / 2;
+    let y: i32 = state.stage_height as i32 / 2 - query.height as i32 / 2;
+    canvas
+        .copy(&texture, None, Rect::new(x, y, query.width, query.height))
+        .unwrap();
+    for sprite in &state.sprites {
+        let costume = &sprite.costumes[sprite.current_costume];
+        let texture = &state.textures[&costume.md5ext];
+        let query = texture.query();
+        let scale = sprite.size / costume.bitmap_resolution;
+        let width = query.width * scale / 100;
+        let height = query.height * scale / 100;
+        let x: i32 = state.stage_width as i32 / 2 + sprite.x - width as i32 / 2;
+        let y: i32 = state.stage_height as i32 / 2 + sprite.y - height as i32 / 2;
+        canvas
+            .copy(&texture, None, Rect::new(x, y, width, height))
+            .unwrap();
+    }
+}
 
 fn main() {
-    Command::new("unzip").arg("project.sb3").output().unwrap();
-
-    let project = sb3::load("project.json");
-
-    let STAGE_WIDTH: i32 = 480;
-    let STAGE_HEIGHT: i32 = 360;
-
+    let state: State = load_virtual_machine_state();
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-
     let window = video_subsystem
-        .window("Rustphorus", STAGE_WIDTH as u32, STAGE_HEIGHT as u32)
+        .window("Rustphorus", state.stage_width, state.stage_height)
         .position_centered()
-        .opengl()
         .build()
-        .map_err(|e| e.to_string())
         .unwrap();
-
-    let mut canvas = window
-        .into_canvas()
-        .build()
-        .map_err(|e| e.to_string())
-        .unwrap();
+    let canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
-
     let texture_creator = canvas.texture_creator();
-
-    let mut costumes = HashMap::new();
-    for costume in project.targets.iter().flat_map(|target| &target.costumes) {
-        costumes
-            .entry(costume.md5ext.clone())
-            .or_insert_with(|| texture_creator.load_texture(&costume.md5ext).unwrap());
-    }
-
-    /* let dango = texture_creator.load_texture("dango.png").unwrap(); */
-
+    load_textures(&state, texture_creator);
     'main: loop {
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => {
+                Event::Quit { .. } => {
                     break 'main;
                 }
                 _ => {}
             }
         }
-        canvas.set_draw_color(Color::RGB(255, 255, 255));
-        canvas.clear();
-        for target in &project.targets {
-            let costume = &target.costumes[target.current_costume];
-            let costume_texture = &costumes[&costume.md5ext];
-            let query = costume_texture.query();
-            match &target.details {
-                Details::Sprite(sprite) => {
-                    let scale = sprite.size / (costume.bitmap_resolution as u32);
-                    let width = query.width * scale / 100;
-                    let height = query.height * scale / 100;
-                    let x: i32 = (STAGE_WIDTH / 2) + sprite.x - (width as i32 / 2);
-                    let y: i32 = (STAGE_HEIGHT / 2) + sprite.y - (height as i32 / 2);
-                    canvas
-                        .copy(&costume_texture, None, Rect::new(x, y, width, height))
-                        .unwrap();
-                }
-                Details::Stage(_) => {
-                    let x: i32 = (STAGE_WIDTH / 2) - (query.width as i32 / 2);
-                    let y: i32 = (STAGE_HEIGHT / 2) - (query.height as i32 / 2);
-                    canvas
-                        .copy(
-                            &costume_texture,
-                            None,
-                            Rect::new(x, y, query.width, query.height),
-                        )
-                        .unwrap();
-                }
-            }
-        }
-        canvas.present();
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
+        render(&state, &canvas);
     }
 }

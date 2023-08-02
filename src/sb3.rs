@@ -74,7 +74,6 @@ pub enum RotationStyle {
     DontRotate,
 }
 
-type Variable = ();
 type List = ();
 type Broadcast = ();
 type Block = ();
