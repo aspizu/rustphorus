@@ -13,16 +13,16 @@ pub mod state;
 
 extern crate sdl2;
 
-fn load_textures(state: &State, texture_creator: TextureCreator<WindowContext>) {
+fn load_textures(state: &mut State, texture_creator: &TextureCreator<WindowContext>) {
     for costume in &state.stage.costumes {
         state
             .textures
-            .entry(costume.md5ext)
-            .or_insert_with(|| texture_creator.load_texture(costume.md5ext).unwrap());
+            .entry(costume.md5ext.clone())
+            .or_insert_with(|| texture_creator.load_texture(&costume.md5ext).unwrap());
     }
 }
 
-fn render(state: &State, canvas: &Canvas<Window>) {
+fn render(state: &mut State, canvas: &mut Canvas<Window>) {
     canvas.set_draw_color(Color::RGB(255, 255, 255));
     canvas.clear();
     let costume = &state.stage.costumes[state.stage.current_costume];
@@ -49,7 +49,7 @@ fn render(state: &State, canvas: &Canvas<Window>) {
 }
 
 fn main() {
-    let state: State = load_virtual_machine_state();
+    let mut state: State = load_virtual_machine_state();
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
@@ -57,10 +57,10 @@ fn main() {
         .position_centered()
         .build()
         .unwrap();
-    let canvas = window.into_canvas().build().unwrap();
+    let mut canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
     let texture_creator = canvas.texture_creator();
-    load_textures(&state, texture_creator);
+    load_textures(&mut state, &texture_creator);
     'main: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -70,6 +70,6 @@ fn main() {
                 _ => {}
             }
         }
-        render(&state, &canvas);
+        render(&mut state, &mut canvas);
     }
 }

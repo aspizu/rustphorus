@@ -156,6 +156,7 @@ pub struct TargetList {
     pub sprites: Vec<Sprite>,
 }
 
+/* I did not write this */
 impl<'de> Deserialize<'de> for TargetList {
     fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         struct TargetListVisitor;
