@@ -1,0 +1,9 @@
+[package]
+name = "scratchvm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sdl2 = { version = "0.35.2", features = ["image"] }
+serde = { version = "1.0.180", features = ["derive"] }
+serde_json = "1.0.104"
