@@ -7,7 +7,6 @@ use crate::input::Input;
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum Value {
-    Integer(i32),
     Float(f64),
     String(String),
 }
@@ -15,7 +14,6 @@ pub enum Value {
 impl Value {
     pub fn to_i32(&self) -> i32 {
         match self {
-            Value::Integer(integer) => *integer,
             Value::Float(float) => *float as i32,
             Value::String(string) => string.parse::<f64>().unwrap_or(0.0) as i32,
         }
@@ -23,7 +21,6 @@ impl Value {
 
     pub fn to_f64(&self) -> f64 {
         match self {
-            Value::Integer(integer) => *integer as f64,
             Value::Float(float) => *float,
             Value::String(string) => string.parse::<f64>().unwrap_or(0.0),
         }

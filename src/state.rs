@@ -12,14 +12,14 @@ use std::{collections::HashMap, fs::File, io::BufReader};
 
 pub struct State<'a> {
     pub stage: Stage,
-    pub sprites: Vec<Sprite>,
+    pub sprites: Vec<Sprite<'a>>,
     pub stage_width: u32,
     pub stage_height: u32,
     pub frame_rate: u32,
     pub textures: HashMap<String, Texture<'a>>,
 }
 
-pub fn load_state() -> State<'static> {
+pub fn load_state<'a>() -> State<'a> {
     Command::new("unzip")
         .arg("-o")
         .arg("Project.sb3")
@@ -38,23 +38,23 @@ pub fn load_state() -> State<'static> {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Project {
-    pub targets: TargetList,
+pub struct Project<'a> {
+    pub targets: TargetList<'a>,
 }
 
 #[derive(Debug)]
-pub struct TargetList {
+pub struct TargetList<'a> {
     pub stage: Stage,
-    pub sprites: Vec<Sprite>,
+    pub sprites: Vec<Sprite<'a>>,
 }
 
 /* I did not write this */
-impl<'de> Deserialize<'de> for TargetList {
+impl<'de> Deserialize<'de> for TargetList<'de> {
     fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         struct TargetListVisitor;
 
         impl<'de> Visitor<'de> for TargetListVisitor {
-            type Value = TargetList;
+            type Value = TargetList<'de>;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "a sequence of a Stage followed by any number of Sprites")

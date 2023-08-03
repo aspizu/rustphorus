@@ -50,23 +50,26 @@ fn render(state: &mut State, canvas: &mut Canvas<Window>) {
         let costume = &sprite.data.costumes[sprite.state.current_costume];
         let texture = &state.textures[&costume.md5ext];
         let query = texture.query();
-        let scale = sprite.state.size / costume.bitmap_resolution;
+        let scale = (sprite.state.size as u32) / costume.bitmap_resolution;
         let width = query.width * scale / 100;
         let height = query.height * scale / 100;
-        let x: i32 = state.stage_width as i32 / 2 + sprite.state.x - width as i32 / 2;
-        let y: i32 = state.stage_height as i32 / 2 + sprite.state.y - height as i32 / 2;
+        let x: i32 = state.stage_width as i32 / 2 + (sprite.state.x as i32) - width as i32 / 2;
+        let y: i32 = state.stage_height as i32 / 2 + (sprite.state.y as i32) - height as i32 / 2;
         canvas
             .copy(&texture, None, Rect::new(x, y, width, height))
             .unwrap();
     }
 }
 
-fn start_scripts(state: &mut State) {
+fn start_scripts<'a>(state: &'a mut State<'a>) {
     for sprite in &mut state.sprites {
         for (id, block) in &sprite.data.blocks {
             match block.opcode.as_str() {
                 "event_whenflagclicked" => {
-                    sprite.scripts.push(Script { id: id.clone() });
+                    sprite.scripts.push(Script {
+                        id: id,
+                        stack: vec![],
+                    });
                 }
                 _ => {}
             }
@@ -81,7 +84,7 @@ fn step_all_scripts(state: &mut State) {
 }
 
 fn main() {
-    let state: State = load_state();
+    let state: State<'static> = load_state();
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
@@ -93,7 +96,7 @@ fn main() {
     let mut canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
     let texture_creator = canvas.texture_creator();
-    let mut state = state;
+    let mut state: State<'static> = state;
     load_textures(&mut state, &texture_creator);
     start_scripts(&mut state);
     'main: loop {
