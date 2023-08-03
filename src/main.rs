@@ -1,3 +1,4 @@
+mod state;
 use std::time::Duration;
 
 use sdl2::{
@@ -9,9 +10,7 @@ use sdl2::{
     video::Window,
     video::WindowContext,
 };
-use state::{load_virtual_machine_state, State};
-
-pub mod state;
+use state::{load_virtual_machine_state, Script, State};
 
 fn load_textures<'a>(state: &mut State<'a>, texture_creator: &'a TextureCreator<WindowContext>) {
     for costume in &state.stage.costumes {
@@ -56,12 +55,26 @@ fn render(state: &mut State, canvas: &mut Canvas<Window>) {
     }
 }
 
+fn start_scripts(state: &mut State) {
+    for sprite in &state.sprites {
+        for (id, block) in &sprite.blocks {
+            match block.opcode.as_str() {
+                "event_whenflagclicked" => {
+                    sprite.scripts.push(Script { id: id.clone() });
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 fn main() {
     let state: State<'_> = load_virtual_machine_state();
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
         .window("Rustphorus", state.stage_width, state.stage_height)
+        .opengl()
         .position_centered()
         .build()
         .unwrap();

@@ -35,7 +35,7 @@
       "lists": { "b=ZPd1p!b:=x=J|WQtsU": ["locallist", []] },
       "broadcasts": {},
       "blocks": {
-        "c": {
+        "b": {
           "opcode": "event_whenflagclicked",
           "next": "a",
           "parent": null,
@@ -46,29 +46,20 @@
           "x": 140,
           "y": 201
         },
-        "d": {
+        "a": {
           "opcode": "motion_changexby",
           "next": null,
           "parent": "b",
-          "inputs": { "DX": [1, [4, "10"]] },
+          "inputs": { "DX": [3, "c", [4, "10"]] },
           "fields": {},
           "shadow": false,
           "topLevel": false
         },
-        "a": {
-          "opcode": "motion_gotoxy",
-          "next": "b",
-          "parent": "c",
-          "inputs": { "X": [1, [4, "0"]], "Y": [1, [4, "0"]] },
-          "fields": {},
-          "shadow": false,
-          "topLevel": false
-        },
-        "b": {
-          "opcode": "control_wait",
-          "next": "d",
+        "c": {
+          "opcode": "sensing_answer",
+          "next": null,
           "parent": "a",
-          "inputs": { "DURATION": [1, [5, "1"]] },
+          "inputs": {},
           "fields": {},
           "shadow": false,
           "topLevel": false
