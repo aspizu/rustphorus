@@ -1,3 +1,5 @@
+use crate::sprite::Sprite;
+use crate::stage::Stage;
 use sdl2::render::Texture;
 use serde::{de::Visitor, Deserializer};
 use serde::{
@@ -5,6 +7,7 @@ use serde::{
     Deserialize,
 };
 use std::fmt;
+use std::process::Command;
 use std::{collections::HashMap, fs::File, io::BufReader};
 
 pub struct State<'a> {
@@ -16,143 +19,12 @@ pub struct State<'a> {
     pub textures: HashMap<String, Texture<'a>>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Stage {
-    pub current_costume: usize,
-    pub volume: u8,
-    pub variables: HashMap<String, Variable>,
-    pub lists: HashMap<String, List>,
-    pub blocks: HashMap<String, Block>,
-    pub costumes: Vec<Costume>,
-    pub tempo: u32,
-    pub video_transparency: u8,
-    pub video_state: VideoState,
-    pub text_to_speech_language: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Sprite {
-    pub name: String,
-    pub layer_order: usize,
-    pub visible: bool,
-    pub x: i32,
-    pub y: i32,
-    pub size: u32,
-    pub direction: f64,
-    pub draggable: bool,
-    pub current_costume: usize,
-    pub rotation_style: RotationStyle,
-    pub volume: u8,
-    pub variables: HashMap<String, Variable>,
-    pub lists: HashMap<String, List>,
-    pub blocks: HashMap<String, Block>,
-    pub costumes: Vec<Costume>,
-    #[serde(skip_deserializing)]
-    pub scripts: Vec<Script>,
-}
-
-#[derive(Debug)]
-pub struct Script {
-    pub id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Costume {
-    pub name: String,
-    pub bitmap_resolution: u32,
-    pub md5ext: String,
-    pub rotation_center_x: i32,
-    pub rotation_center_y: i32,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RotationStyle {
-    #[serde(rename = "all around")]
-    AllAround,
-    #[serde(rename = "left-right")]
-    LeftRight,
-    #[serde(rename = "don't rotate")]
-    DontRotate,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum VideoState {
-    On,
-    Off,
-    KillingTheRadioStar,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Value {
-    Integer(i32),
-    Float(f64),
-    String(String),
-}
-
-impl Value {
-    pub fn to_i32(&self) -> i32 {
-        match self {
-            Value::Integer(integer) => *integer,
-            Value::Float(float) => *float as i32,
-            Value::String(string) => string.parse::<f64>().unwrap_or(0.0) as i32,
-        }
-    }
-
-    pub fn to_f64(&self) -> f64 {
-        match self {
-            Value::Integer(integer) => *integer as f64,
-            Value::Float(float) => *float,
-            Value::String(string) => string.parse::<f64>().unwrap_or(0.0),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Variable {
-    pub name: String,
-    pub value: Value,
-}
-
-/* I did not write this */
-impl<'de> Deserialize<'de> for Variable {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        let (name, value) = Deserialize::deserialize(de)?;
-        Ok(Self { name, value })
-    }
-}
-
-#[derive(Debug)]
-pub struct List {
-    pub name: String,
-    pub value: Vec<Value>,
-}
-
-/* I did not write this */
-impl<'de> Deserialize<'de> for List {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        let (name, value) = Deserialize::deserialize(de)?;
-        Ok(Self { name, value })
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Block {
-    pub opcode: String,
-    pub next: Option<String>,
-    pub parent: Option<String>,
-    pub inputs: HashMap<String, Input>,
-    //pub fields: HashMap<String, Field>,
-    pub top_level: bool,
-}
-
-pub fn load_virtual_machine_state() -> State<'static> {
+pub fn load_state() -> State<'static> {
+    Command::new("unzip")
+        .arg("-o")
+        .arg("Project.sb3")
+        .status()
+        .unwrap();
     let project: Project =
         serde_json::from_reader(BufReader::new(File::open("project.json").unwrap())).unwrap();
     State {
@@ -203,109 +75,4 @@ impl<'de> Deserialize<'de> for TargetList {
 
         de.deserialize_seq(TargetListVisitor)
     }
-}
-
-#[derive(Debug)]
-pub enum Input {
-    Block(String),
-    Value(Value),
-    Broadcast(InputBroadcast),
-    Variable(InputVariable),
-    List(InputList),
-}
-
-/* I wrote this */
-impl<'de> Deserialize<'de> for Input {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        struct SeqVisitor;
-        impl<'de> Visitor<'de> for SeqVisitor {
-            type Value = Input;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "Input")
-            }
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                #[derive(Debug, Deserialize)]
-                #[serde(untagged)]
-                enum T {
-                    String(String),
-                    Values(Vec<Value>),
-                }
-                let _shadow = seq.next_element::<i32>()?;
-                match seq.next_element::<T>()? {
-                    Some(T::String(string)) => {
-                        while seq.next_element::<serde_json::Value>()?.is_some() {}
-                        return Ok(Input::Block(string));
-                    }
-                    Some(T::Values(mut values)) => match values[0] {
-                        Value::Integer(4)
-                        | Value::Integer(5)
-                        | Value::Integer(6)
-                        | Value::Integer(7)
-                        | Value::Integer(8)
-                        | Value::Integer(9)
-                        | Value::Integer(10) => {
-                            return Ok(Input::Value(values.remove(1)));
-                        }
-                        Value::Integer(11) => {
-                            return Ok(Input::Broadcast(InputBroadcast {
-                                name: match values.remove(1) {
-                                    Value::String(string) => string,
-                                    _ => panic!(),
-                                },
-                                id: match values.remove(1) {
-                                    Value::String(string) => string,
-                                    _ => panic!(),
-                                },
-                            }));
-                        }
-                        Value::Integer(12) => {
-                            return Ok(Input::Variable(InputVariable {
-                                name: match values.remove(1) {
-                                    Value::String(string) => string,
-                                    _ => panic!(),
-                                },
-                                id: match values.remove(1) {
-                                    Value::String(string) => string,
-                                    _ => panic!(),
-                                },
-                            }));
-                        }
-                        Value::Integer(13) => {
-                            return Ok(Input::List(InputList {
-                                name: match values.remove(1) {
-                                    Value::String(string) => string,
-                                    _ => panic!(),
-                                },
-                                id: match values.remove(1) {
-                                    Value::String(string) => string,
-                                    _ => panic!(),
-                                },
-                            }));
-                        }
-                        _ => todo!(),
-                    },
-                    None => todo!(),
-                }
-            }
-        }
-        de.deserialize_seq(SeqVisitor)
-    }
-}
-
-#[derive(Debug)]
-pub struct InputBroadcast {
-    pub name: String,
-    pub id: String,
-}
-
-#[derive(Debug)]
-pub struct InputVariable {
-    pub name: String,
-    pub id: String,
-}
-
-#[derive(Debug)]
-pub struct InputList {
-    pub name: String,
-    pub id: String,
 }

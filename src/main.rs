@@ -1,6 +1,12 @@
+mod block;
+mod costume;
+mod input;
+mod script;
+mod sprite;
+mod stage;
 mod state;
-use std::time::Duration;
-
+use crate::script::Script;
+use crate::state::{load_state, State};
 use sdl2::{
     event::Event,
     image::LoadTexture,
@@ -10,7 +16,7 @@ use sdl2::{
     video::Window,
     video::WindowContext,
 };
-use state::{load_virtual_machine_state, Block, Input, Script, Sprite, State, Value};
+use std::time::Duration;
 
 fn load_textures<'a>(state: &mut State<'a>, texture_creator: &'a TextureCreator<WindowContext>) {
     for costume in &state.stage.costumes {
@@ -20,7 +26,7 @@ fn load_textures<'a>(state: &mut State<'a>, texture_creator: &'a TextureCreator<
             .or_insert_with(|| texture_creator.load_texture(&costume.md5ext).unwrap());
     }
     for sprite in &state.sprites {
-        for costume in &sprite.costumes {
+        for costume in &sprite.data.costumes {
             state
                 .textures
                 .entry(costume.md5ext.clone())
@@ -41,14 +47,14 @@ fn render(state: &mut State, canvas: &mut Canvas<Window>) {
         .copy(&texture, None, Rect::new(x, y, query.width, query.height))
         .unwrap();
     for sprite in &state.sprites {
-        let costume = &sprite.costumes[sprite.current_costume];
+        let costume = &sprite.data.costumes[sprite.state.current_costume];
         let texture = &state.textures[&costume.md5ext];
         let query = texture.query();
-        let scale = sprite.size / costume.bitmap_resolution;
+        let scale = sprite.state.size / costume.bitmap_resolution;
         let width = query.width * scale / 100;
         let height = query.height * scale / 100;
-        let x: i32 = state.stage_width as i32 / 2 + sprite.x - width as i32 / 2;
-        let y: i32 = state.stage_height as i32 / 2 + sprite.y - height as i32 / 2;
+        let x: i32 = state.stage_width as i32 / 2 + sprite.state.x - width as i32 / 2;
+        let y: i32 = state.stage_height as i32 / 2 + sprite.state.y - height as i32 / 2;
         canvas
             .copy(&texture, None, Rect::new(x, y, width, height))
             .unwrap();
@@ -56,8 +62,8 @@ fn render(state: &mut State, canvas: &mut Canvas<Window>) {
 }
 
 fn start_scripts(state: &mut State) {
-    for sprite in state.sprites.iter_mut() {
-        for (id, block) in &sprite.blocks {
+    for sprite in &mut state.sprites {
+        for (id, block) in &sprite.data.blocks {
             match block.opcode.as_str() {
                 "event_whenflagclicked" => {
                     sprite.scripts.push(Script { id: id.clone() });
@@ -68,49 +74,14 @@ fn start_scripts(state: &mut State) {
     }
 }
 
-impl Sprite {
-    fn evaluate_block(&self, id: &String) -> Value {
-        let block = &self.blocks[id];
-        Value::Integer(0)
-    }
-
-    fn execute_block(&mut self, id: &String) {
-        let block = &self.blocks[id];
-        match block.opcode.as_str() {
-            "motion_goto" => {
-                self.x = match &block.inputs["x"] {
-                    Input::Block(block) => self.evaluate_block(block).to_i32(),
-                    Input::Value(value) => value.to_i32(),
-                    _ => panic!(),
-                };
-                self.y = match &block.inputs["y"] {
-                    Input::Value(value) => value.to_i32(),
-                    _ => panic!(),
-                };
-            }
-            _ => panic!(),
-        }
-    }
-
-    fn step_scripts(&mut self) {
-        for script in &self.scripts {
-            self.step_script(script);
-        }
-    }
-
-    fn step_script(&mut self, script: &Script) {
-        self.execute_block(&script.id);
-    }
-}
-
 fn step_all_scripts(state: &mut State) {
-    for sprite in &state.sprites {
+    for sprite in &mut state.sprites {
         sprite.step_scripts();
     }
 }
 
 fn main() {
-    let state: State = load_virtual_machine_state();
+    let state: State = load_state();
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
