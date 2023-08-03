@@ -10,7 +10,7 @@ use sdl2::{
     video::Window,
     video::WindowContext,
 };
-use state::{load_virtual_machine_state, Script, State};
+use state::{load_virtual_machine_state, Block, Input, Script, Sprite, State, Value};
 
 fn load_textures<'a>(state: &mut State<'a>, texture_creator: &'a TextureCreator<WindowContext>) {
     for costume in &state.stage.costumes {
@@ -68,6 +68,45 @@ fn start_scripts(state: &mut State) {
     }
 }
 
+fn evaluate_block(sprite: &Sprite, block: &Block) -> Value {
+    Value::Integer(0)
+}
+
+impl Sprite {
+    fn execute_block(&mut self, block: &Block) {
+        match block.opcode.as_str() {
+            "motion_goto" => {
+                self.x = match &block.inputs["x"] {
+                    Input::Block(block) => evaluate_block(self, &self.blocks[block]).to_i32(),
+                    Input::Value(value) => value.to_i32(),
+                    _ => panic!(),
+                };
+                self.y = match &block.inputs["y"] {
+                    Input::Value(value) => value.to_i32(),
+                    _ => panic!(),
+                };
+            }
+            _ => panic!(),
+        }
+    }
+
+    fn step_scripts(&mut self) {
+        for script in &self.scripts {
+            self.step_script(script);
+        }
+    }
+
+    fn step_script(&mut self, script: &Script) {
+        self.execute_block(&self.blocks[&script.id]);
+    }
+}
+
+fn step_all_scripts(state: &mut State) {
+    for sprite in &state.sprites {
+        sprite.step_scripts();
+    }
+}
+
 fn main() {
     let state: State = load_virtual_machine_state();
     let sdl_context = sdl2::init().unwrap();
@@ -93,7 +132,7 @@ fn main() {
                 _ => {}
             }
         }
-
+        step_all_scripts(&mut state);
         render(&mut state, &mut canvas);
         canvas.present();
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / state.frame_rate));

@@ -95,6 +95,24 @@ pub enum Value {
     String(String),
 }
 
+impl Value {
+    pub fn to_i32(&self) -> i32 {
+        match self {
+            Value::Integer(integer) => *integer,
+            Value::Float(float) => *float as i32,
+            Value::String(string) => string.parse::<f64>().unwrap_or(0.0) as i32,
+        }
+    }
+
+    pub fn to_f64(&self) -> f64 {
+        match self {
+            Value::Integer(integer) => *integer as f64,
+            Value::Float(float) => *float,
+            Value::String(string) => string.parse::<f64>().unwrap_or(0.0),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Variable {
     pub name: String,
