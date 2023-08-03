@@ -55,12 +55,12 @@ fn render(state: &mut State, canvas: &mut Canvas<Window>) {
     }
 }
 
-fn start_scripts(state: &mut State) {
-    for sprite in &state.sprites {
+fn start_scripts<'a>(state: &'a mut State<'a>) {
+    for sprite in state.sprites.iter_mut() {
         for (id, block) in &sprite.blocks {
             match block.opcode.as_str() {
                 "event_whenflagclicked" => {
-                    sprite.scripts.push(Script { id: id.clone() });
+                    sprite.scripts.push(Script { id });
                 }
                 _ => {}
             }
@@ -69,7 +69,7 @@ fn start_scripts(state: &mut State) {
 }
 
 fn main() {
-    let state: State<'_> = load_virtual_machine_state();
+    let state: State = load_virtual_machine_state();
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
@@ -83,6 +83,7 @@ fn main() {
     let texture_creator = canvas.texture_creator();
     let mut state = state;
     load_textures(&mut state, &texture_creator);
+    start_scripts(&mut state);
     'main: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -92,6 +93,7 @@ fn main() {
                 _ => {}
             }
         }
+
         render(&mut state, &mut canvas);
         canvas.present();
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / state.frame_rate));
