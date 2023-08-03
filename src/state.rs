@@ -9,7 +9,7 @@ use std::{collections::HashMap, fs::File, io::BufReader};
 
 pub struct State<'a> {
     pub stage: Stage,
-    pub sprites: Vec<Sprite<'a>>,
+    pub sprites: Vec<Sprite>,
     pub stage_width: u32,
     pub stage_height: u32,
     pub frame_rate: u32,
@@ -33,7 +33,7 @@ pub struct Stage {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Sprite<'a> {
+pub struct Sprite {
     pub name: String,
     pub layer_order: usize,
     pub visible: bool,
@@ -50,12 +50,12 @@ pub struct Sprite<'a> {
     pub blocks: HashMap<String, Block>,
     pub costumes: Vec<Costume>,
     #[serde(skip_deserializing)]
-    pub scripts: Vec<Script<'a>>,
+    pub scripts: Vec<Script>,
 }
 
 #[derive(Debug)]
-pub struct Script<'a> {
-    pub id: &'a String,
+pub struct Script {
+    pub id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,8 +102,8 @@ pub struct Variable {
 }
 
 /* I did not write this */
-impl<'a> Deserialize<'a> for Variable {
-    fn deserialize<D: Deserializer<'a>>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for Variable {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         let (name, value) = Deserialize::deserialize(de)?;
         Ok(Self { name, value })
     }
@@ -116,8 +116,8 @@ pub struct List {
 }
 
 /* I did not write this */
-impl<'a> Deserialize<'a> for List {
-    fn deserialize<D: Deserializer<'a>>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for List {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         let (name, value) = Deserialize::deserialize(de)?;
         Ok(Self { name, value })
     }
@@ -148,29 +148,29 @@ pub fn load_virtual_machine_state() -> State<'static> {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Project<'a> {
-    pub targets: TargetList<'a>,
+pub struct Project {
+    pub targets: TargetList,
 }
 
 #[derive(Debug)]
-pub struct TargetList<'a> {
+pub struct TargetList {
     pub stage: Stage,
-    pub sprites: Vec<Sprite<'a>>,
+    pub sprites: Vec<Sprite>,
 }
 
 /* I did not write this */
-impl<'a> Deserialize<'a> for TargetList<'a> {
-    fn deserialize<D: Deserializer<'a>>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for TargetList {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         struct TargetListVisitor;
 
-        impl<'a> Visitor<'a> for TargetListVisitor {
-            type Value = TargetList<'a>;
+        impl<'de> Visitor<'de> for TargetListVisitor {
+            type Value = TargetList;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "a sequence of a Stage followed by any number of Sprites")
             }
 
-            fn visit_seq<A: SeqAccess<'a>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
                 let stage = seq
                     .next_element()?
                     .ok_or_else(|| A::Error::missing_field("stage"))?;
@@ -197,15 +197,15 @@ pub enum Input {
 }
 
 /* I wrote this */
-impl<'a> Deserialize<'a> for Input {
-    fn deserialize<D: Deserializer<'a>>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for Input {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         struct SeqVisitor;
-        impl<'a> Visitor<'a> for SeqVisitor {
+        impl<'de> Visitor<'de> for SeqVisitor {
             type Value = Input;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 write!(f, "Input")
             }
-            fn visit_seq<A: SeqAccess<'a>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
                 #[derive(Debug, Deserialize)]
                 #[serde(untagged)]
                 enum T {

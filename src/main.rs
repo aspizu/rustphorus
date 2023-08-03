@@ -55,12 +55,12 @@ fn render(state: &mut State, canvas: &mut Canvas<Window>) {
     }
 }
 
-fn start_scripts<'a>(state: &'a mut State<'a>) {
+fn start_scripts(state: &mut State) {
     for sprite in state.sprites.iter_mut() {
         for (id, block) in &sprite.blocks {
             match block.opcode.as_str() {
                 "event_whenflagclicked" => {
-                    sprite.scripts.push(Script { id });
+                    sprite.scripts.push(Script { id: id.clone() });
                 }
                 _ => {}
             }
