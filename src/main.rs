@@ -68,16 +68,18 @@ fn start_scripts(state: &mut State) {
     }
 }
 
-fn evaluate_block(sprite: &Sprite, block: &Block) -> Value {
-    Value::Integer(0)
-}
-
 impl Sprite {
-    fn execute_block(&mut self, block: &Block) {
+    fn evaluate_block(&self, id: &String) -> Value {
+        let block = &self.blocks[id];
+        Value::Integer(0)
+    }
+
+    fn execute_block(&mut self, id: &String) {
+        let block = &self.blocks[id];
         match block.opcode.as_str() {
             "motion_goto" => {
                 self.x = match &block.inputs["x"] {
-                    Input::Block(block) => evaluate_block(self, &self.blocks[block]).to_i32(),
+                    Input::Block(block) => self.evaluate_block(block).to_i32(),
                     Input::Value(value) => value.to_i32(),
                     _ => panic!(),
                 };
@@ -97,7 +99,7 @@ impl Sprite {
     }
 
     fn step_script(&mut self, script: &Script) {
-        self.execute_block(&self.blocks[&script.id]);
+        self.execute_block(&script.id);
     }
 }
 
