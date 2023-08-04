@@ -1,0 +1,8 @@
+condense_wildcard_suffixes = true
+edition = "2021"
+max_width = 88
+group_imports = "StdExternalCrate"
+tab_spaces = 2
+use_field_init_shorthand = true
+use_try_shorthand = true
+where_single_line = true

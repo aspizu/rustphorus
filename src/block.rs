@@ -1,67 +1,74 @@
+use serde::Deserialize;
 use std::collections::HashMap;
 
-use serde::{Deserialize, Deserializer};
-
-use crate::input::Input;
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Value {
-    Float(f64),
-    String(String),
+  Float(f64),
+  String(String),
 }
 
 impl Value {
-    pub fn to_i32(&self) -> i32 {
-        match self {
-            Value::Float(float) => *float as i32,
-            Value::String(string) => string.parse::<f64>().unwrap_or(0.0) as i32,
-        }
+  pub fn to_i32(&self) -> i32 {
+    match self {
+      Value::Float(float) => *float as i32,
+      Value::String(string) => string.parse::<f64>().unwrap_or(0.0) as i32,
     }
+  }
 
-    pub fn to_f64(&self) -> f64 {
-        match self {
-            Value::Float(float) => *float,
-            Value::String(string) => string.parse::<f64>().unwrap_or(0.0),
-        }
+  pub fn to_u32(&self) -> u32 {
+    match self {
+      Value::Float(float) => *float as u32,
+      Value::String(string) => string.parse::<f64>().unwrap_or(0.0) as u32,
     }
+  }
+
+  pub fn to_f64(&self) -> f64 {
+    match self {
+      Value::Float(float) => *float,
+      Value::String(string) => string.parse::<f64>().unwrap_or(0.0),
+    }
+  }
+
+  pub fn map_as_str<T, F: FnOnce(&str) -> T>(&self, map: F) -> T {
+    match self {
+      Value::Float(float) => map(float.to_string().as_str()),
+      Value::String(string) => map(string.as_str()),
+    }
+  }
 }
 
 #[derive(Debug)]
-pub struct Variable {
-    pub name: String,
-    pub value: Value,
-}
-
-/* I did not write this */
-impl<'de> Deserialize<'de> for Variable {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        let (name, value) = Deserialize::deserialize(de)?;
-        Ok(Self { name, value })
-    }
+pub enum Input {
+  Block(usize),
+  Value(Value),
+  Broadcast(BroadcastInput),
+  Variable(VariableInput),
+  List(ListInput),
 }
 
 #[derive(Debug)]
-pub struct List {
-    pub name: String,
-    pub value: Vec<Value>,
+pub struct BroadcastInput {
+  pub name: String,
+  pub id: String,
 }
 
-/* I did not write this */
-impl<'de> Deserialize<'de> for List {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        let (name, value) = Deserialize::deserialize(de)?;
-        Ok(Self { name, value })
-    }
+#[derive(Debug)]
+pub struct VariableInput {
+  pub is_global: bool,
+  pub id: usize,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
+pub struct ListInput {
+  pub is_global: bool,
+  pub id: usize,
+}
+
+#[derive(Debug)]
 pub struct Block {
-    pub opcode: String,
-    pub next: Option<String>,
-    pub parent: Option<String>,
-    pub inputs: HashMap<String, Input>,
-    //pub fields: HashMap<String, Field>,
-    pub top_level: bool,
+  pub opcode: String,
+  pub next: usize,
+  pub parent: usize,
+  pub inputs: HashMap<String, Input>,
 }
