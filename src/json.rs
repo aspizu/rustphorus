@@ -32,7 +32,7 @@ struct Target {
   variables: HashMap<String, Variable>,
   lists: HashMap<String, List>,
   blocks: HashMap<String, Block>,
-  current_costume: usize,
+  current_costume: i32,
   costumes: Vec<Costume>,
   // layer_order: i32,
   volume: f64,
@@ -84,7 +84,7 @@ struct Block {
   next: Option<String>,
   parent: Option<String>,
   inputs: HashMap<String, Input>,
-  // fields: HashMap<String, Field>,
+  fields: HashMap<String, Field>,
 }
 
 #[derive(Deserialize)]
@@ -134,6 +134,20 @@ pub enum Input {
   List(ListInput),
 }
 
+#[derive(Debug)]
+pub struct Field {
+  pub value: Value,
+  pub id: Option<String>,
+}
+
+/* I did not write this */
+impl<'de> Deserialize<'de> for Field {
+  fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+    let (value, id) = Deserialize::deserialize(de)?;
+    Ok(Self { value, id })
+  }
+}
+
 /* I wrote this */
 impl<'de> Deserialize<'de> for Input {
   fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
@@ -159,7 +173,7 @@ impl<'de> Deserialize<'de> for Input {
             while seq.next_element::<serde_json::Value>()?.is_some() {}
             return Ok(Input::Block(string));
           }
-          Some(T::Values(mut values)) => match values[0].to_i32() {
+          Some(T::Values(mut values)) => match values[0].to_f64() as i32 {
             4 | 5 | 6 | 7 | 8 | 9 | 10 => {
               return Ok(Input::Value(values.remove(1)));
             }
@@ -231,9 +245,38 @@ pub fn load<'a>(
   texture_creator: &'a TextureCreator<WindowContext>,
   config: Config,
 ) -> project::Project<'a> {
-  let json_project: Project =
+  let mut json_project: Project =
     serde_json::from_reader(BufReader::new(File::open("tmp/project.json").unwrap()))
       .unwrap();
+
+  // Convert fields into inputs
+  for target in &mut json_project.targets {
+    for block in target.blocks.values_mut() {
+      for (key, field) in &block.fields {
+        block.inputs.insert(
+          key.clone(),
+          if let Some(id) = &field.id {
+            if target.variables.contains_key(id) {
+              Input::Variable(VariableInput {
+                name: format!("ghost"),
+                id: id.clone(),
+              })
+            } else if target.lists.contains_key(id) {
+              Input::List(ListInput {
+                name: format!("ghost"),
+                id: id.clone(),
+              })
+            } else {
+              panic!()
+            }
+          } else {
+            Input::Value(field.value.clone())
+          },
+        );
+      }
+    }
+  }
+
   let mut project = project::Project {
     config,
     target_name_to_target_index: HashMap::with_capacity(json_project.targets.len()), // DONE
@@ -251,7 +294,7 @@ pub fn load<'a>(
     index += 1;
   }
   let mut index = 0;
-  for id in json_project.targets[0].lists.keys() {
+  for id in json_stage.lists.keys() {
     global_lists_id_to_index.insert(&id, index);
     index += 1;
   }
@@ -280,7 +323,8 @@ pub fn load<'a>(
       data: target::TargetData {
         is_stage: json_target.is_stage,
         blocks: Vec::new(),
-        costume_name_to_index: HashMap::new(), // DONE
+        costume_index_to_name: Vec::with_capacity(json_target.costumes.len()),
+        costume_name_to_index: HashMap::with_capacity(json_target.costumes.len()), // DONE
         costume_index_to_texture_index: HashMap::new(), // DONE
       },
       state: target::TargetState {
@@ -290,7 +334,7 @@ pub fn load<'a>(
         size: json_target.size,
         direction: json_target.direction,
         draggable: json_target.draggable,
-        current_costume: json_target.current_costume,
+        current_costume: (json_target.current_costume) as usize,
         rotation_style: match json_target.rotation_style.as_str() {
           "all around" => target::RotationStyle::AllAround,
           "don't rotate" => target::RotationStyle::DontRotate,
@@ -300,6 +344,7 @@ pub fn load<'a>(
         volume: json_target.volume,
         variables: Vec::with_capacity(json_target.variables.len()), // DONE
         lists: Vec::with_capacity(json_target.lists.len()),         // DONE
+        say: None,
       },
       scripts: Vec::new(),
     });
@@ -362,7 +407,7 @@ pub fn load<'a>(
           .map(|(key, input)| {
             (
               key.clone(),
-              match &input {
+              match input {
                 Input::Value(value) => block::Input::Value(value.clone()),
                 Input::Block(id) => block::Input::Block(id_to_index[&id]),
                 Input::Broadcast(broadcast) => {
@@ -396,6 +441,7 @@ pub fn load<'a>(
       });
     }
     for (i, costume) in json_target.costumes.iter().enumerate() {
+      target.data.costume_index_to_name.push(costume.name.clone());
       target
         .data
         .costume_name_to_index

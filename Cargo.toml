@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 derivative = "2.2.0"
-sdl2 = { version = "0.35.2", features = ["image"] }
+libc = "0.2.147"
+sdl2 = { version = "0.35.2", features = ["image", "ttf"] }
 serde = { version = "1.0.181", features = ["derive"] }
 serde_json = "1.0.104"

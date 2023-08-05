@@ -5,6 +5,7 @@ use sdl2::{
   pixels::Color,
   render::Canvas,
   render::{Texture as sdl2Texture, TextureCreator},
+  ttf::Font,
   video::Window,
   video::WindowContext,
 };
@@ -15,7 +16,7 @@ use crate::{json, target::Target};
 pub struct Project<'a> {
   pub config: Config,
   pub target_name_to_target_index: HashMap<String, usize>,
-  pub targets: Vec<Target>,
+  pub targets: Vec<Target<'a>>,
   pub textures: Vec<Texture<'a>>,
 }
 
@@ -51,11 +52,24 @@ impl<'a> Project<'a> {
       .unwrap();
     json::load(&texture_creator, config)
   }
-  pub fn render(&self, canvas: &mut Canvas<Window>) {
+  pub fn render(
+    &mut self,
+    canvas: &mut Canvas<Window>,
+    texture_creator: &'a TextureCreator<WindowContext>,
+    font: &Font,
+  ) {
     canvas.set_draw_color(Color::WHITE);
     canvas.clear();
-    for target in &self.targets {
-      target.render(&self.textures, canvas, &self.config);
+    for target in &mut self.targets {
+      Target::render(
+        &target.data,
+        &mut target.state,
+        &self.textures,
+        canvas,
+        texture_creator,
+        font,
+        &self.config,
+      );
     }
   }
 

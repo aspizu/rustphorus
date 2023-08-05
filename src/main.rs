@@ -1,5 +1,5 @@
 use project::{Config, Project};
-use sdl2::event::Event;
+use sdl2::{event::Event, pixels::Color};
 use std::{thread::sleep, time::Duration};
 
 mod block;
@@ -15,6 +15,9 @@ fn main() {
     frame_rate: 30,
   };
   let sdl_context = sdl2::init().unwrap();
+  let ttf_context = sdl2::ttf::init().unwrap();
+  let font = ttf_context.load_font("font.ttf", 16).unwrap();
+
   let video_subsystem = sdl_context.video().unwrap();
   let window = video_subsystem
     .window("Rustphorus", config.stage_width, config.stage_height)
@@ -39,7 +42,7 @@ fn main() {
       }
     }
     project.execute_scripts();
-    project.render(&mut canvas);
+    project.render(&mut canvas, &texture_creator, &font);
     canvas.present();
     sleep(duration);
   }
