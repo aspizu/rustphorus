@@ -5,6 +5,7 @@ pub struct Script {
   pub id: usize,
   pub stack: Vec<StackFrame>,
   pub arguments: Vec<Value>,
+  pub arguments_start: usize,
   pub refresh: bool,
 }
 

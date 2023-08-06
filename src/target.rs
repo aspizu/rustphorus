@@ -94,6 +94,7 @@ impl<'a> Target<'a> {
           id: index + 1,
           stack: vec![],
           arguments: vec![],
+          arguments_start: 0,
           refresh: true,
         }),
         _ => {}
@@ -152,6 +153,7 @@ fn execute_script(
     }
     "procedures_call" => {
       let custom_block = aux_field(block, "PROCCODE", |s| &data.custom_blocks[s]);
+      script.arguments_start = script.arguments.len();
       script.stack.push(StackFrame::CustomBlock {
         argument_count: custom_block.argument_ids.len(),
         return_id: block.next,
@@ -207,6 +209,7 @@ fn execute_script(
           if *refresh_was_set_false {
             script.refresh = true;
           }
+          script.arguments_start -= *argument_count;
           script
             .arguments
             .truncate(script.arguments.len() - *argument_count);
@@ -227,7 +230,10 @@ fn execute_script(
   return (terminate, refresh);
 }
 
-fn get_argument(block: &Block, script: &Script) -> Value {}
+fn get_argument(index: usize, script: &Script) -> Value {
+  let peek = script.arguments_start + index;
+  script.arguments[peek].clone()
+}
 
 fn get_direction(direction: f64) -> Option<f64> {
   if direction == 0. || direction.is_normal() {
@@ -471,7 +477,6 @@ fn evaluate_block(
       }
       _ => panic!(),
     }),
-    "argument_reporter_string_number" => get_argument(block, script),
     _ => {
       panic!("I don't know how to evaluate: {block:#?}")
     }
@@ -509,6 +514,7 @@ fn aux_f64(
     Input::Block(id) => evaluate_block(data, state, *id, script).to_f64(),
     Input::Value(value) => value.to_f64(),
     Input::Variable(variable) => state.variables[variable.id].to_f64(),
+    Input::Argument(argument) => get_argument(*argument, script).to_f64(),
     _ => 0.,
   }
 }
@@ -523,6 +529,7 @@ fn aux_bool(
     Input::Block(id) => evaluate_block(data, state, *id, script).to_bool(),
     Input::Value(value) => value.to_bool(),
     Input::Variable(variable) => state.variables[variable.id].to_bool(),
+    Input::Argument(argument) => get_argument(*argument, script).to_bool(),
     _ => false,
   }
 }
@@ -537,6 +544,7 @@ fn aux_string(
     Input::Block(id) => evaluate_block(data, state, *id, script).to_string(),
     Input::Value(value) => value.to_string(),
     Input::Variable(variable) => state.variables[variable.id].to_string(),
+    Input::Argument(argument) => get_argument(*argument, script).to_string(),
     _ => panic!(),
   }
 }
@@ -551,6 +559,7 @@ fn aux_value(
     Input::Block(id) => evaluate_block(data, state, *id, script),
     Input::Value(value) => value.clone(),
     Input::Variable(variable) => state.variables[variable.id].clone(),
+    Input::Argument(argument) => get_argument(*argument, script).clone(),
     _ => panic!(),
   }
 }
@@ -576,6 +585,7 @@ fn aux_map_as_str<T, F: FnOnce(&str) -> T>(
     Input::Block(id) => evaluate_block(data, state, *id, script).map_as_str(map),
     Input::Value(value) => value.map_as_str(map),
     Input::Variable(variable) => state.variables[variable.id].map_as_str(map),
+    Input::Argument(argument) => get_argument(*argument, script).map_as_str(map),
     _ => panic!(),
   }
 }

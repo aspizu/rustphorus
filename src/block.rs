@@ -161,6 +161,7 @@ pub enum Value {
 #[derive(Debug)]
 pub enum Input {
   Block(usize),
+  Argument(usize),
   Value(Value),
   Broadcast(BroadcastInput),
   Variable(VariableInput),

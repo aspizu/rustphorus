@@ -1,3 +1,4 @@
+use std::thread::panicking;
 use std::{collections::HashMap, fs::remove_dir_all, process::Command};
 
 use derivative::Derivative;
@@ -88,6 +89,9 @@ impl<'a> Project<'a> {
 
 impl<'a> Drop for Project<'a> {
   fn drop(&mut self) {
+    if panicking() {
+      return;
+    }
     remove_dir_all("tmp").unwrap();
   }
 }

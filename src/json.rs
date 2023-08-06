@@ -26,7 +26,7 @@ pub struct Project {
   // extensions: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Target {
   is_stage: bool,
@@ -78,25 +78,25 @@ fn default_direction() -> f64 {
 fn default_rotation_style() -> String {
   format!("don't rotate")
 }
-
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Block {
   opcode: String,
   next: Option<String>,
-  // parent: Option<String>,
+  parent: Option<String>,
   inputs: HashMap<String, Input>,
   fields: HashMap<String, Field>,
   #[serde(default = "no_mutation")]
   mutation: Mutation,
 }
-
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Mutation {
   proccode: String,
   #[serde(deserialize_with = "parse_json")]
   argumentids: Vec<String>,
+  #[serde(default, deserialize_with = "parse_json")]
+  argumentnames: Vec<String>,
   #[serde(deserialize_with = "parse_json")]
   warp: bool,
 }
@@ -105,6 +105,7 @@ fn no_mutation() -> Mutation {
   Mutation {
     proccode: format!(""),
     argumentids: vec![],
+    argumentnames: vec![],
     warp: false,
   }
 }
@@ -119,7 +120,7 @@ where
   Ok(array)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Costume {
   name: String,
@@ -273,6 +274,45 @@ pub struct ListInput {
   pub id: String,
 }
 
+fn convert_argument_reporter(
+  blocks: &HashMap<String, Block>,
+  block: &Block,
+) -> Option<usize> {
+  // reporter block is rogue, no need to convert.
+  let Some(mut id) = block.parent.as_ref() else { return None };
+
+  let custom_block_id;
+  loop {
+    let block = &blocks[id];
+    if block.opcode == "procedures_definition" {
+      if let Input::Block(id) = &block.inputs["custom_block"] {
+        custom_block_id = id;
+        break;
+      } else {
+        panic!("procedures_definition must have a custom_block input.");
+      }
+    }
+    if let Some(parent_id) = &block.parent {
+      id = parent_id;
+    } else {
+      // reporter block is contained inside a rogue stack of blocks, no need to convert.
+      return None;
+    }
+  }
+  let custom_block = &blocks[custom_block_id];
+
+  let Value::String(argument_name) = &block.fields["VALUE"].value else { return None };
+
+  let index = custom_block
+    .mutation
+    .argumentnames
+    .iter()
+    .position(|x| x == argument_name)
+    .unwrap();
+
+  Some(index)
+}
+
 pub fn load<'a>(
   texture_creator: &'a TextureCreator<WindowContext>,
   config: Config,
@@ -283,6 +323,30 @@ pub fn load<'a>(
 
   // Convert fields into inputs
   for target in &mut json_project.targets {
+    // Convert argument reporters
+    let apply: Vec<(String, usize)> = target
+      .blocks
+      .iter()
+      .filter_map(|(id, block)| {
+        if block.opcode == "argument_reporter_string_number" {
+          if let Some(index) = convert_argument_reporter(&target.blocks, block) {
+            Some((id.clone(), index))
+          } else {
+            None
+          }
+        } else {
+          None
+        }
+      })
+      .collect();
+    for (id, index) in apply {
+      target
+        .blocks
+        .get_mut(&id)
+        .unwrap()
+        .inputs
+        .insert(format!("VALUE"), Input::Value(Value::Float(index as f64)));
+    }
     for block in target.blocks.values_mut() {
       // Convert mutation into inputs
       if block.opcode == "procedures_call" {
@@ -293,6 +357,9 @@ pub fn load<'a>(
       }
 
       for (key, field) in &block.fields {
+        if block.opcode == "argument_reporter_string_number" {
+          continue;
+        }
         block.inputs.insert(
           key.clone(),
           if let Some(id) = &field.id {
@@ -434,6 +501,7 @@ pub fn load<'a>(
     }
     for id in index_to_id {
       let block = &json_target.blocks[id];
+      // Filter custom blocks
       if block.opcode == "procedures_definition" {
         if let Input::Block(id) = &block.inputs["custom_block"] {
           let custom_block = &json_target.blocks[id];
@@ -469,7 +537,22 @@ pub fn load<'a>(
               key.clone(),
               match input {
                 Input::Value(value) => block::Input::Value(value.clone()),
-                Input::Block(id) => block::Input::Block(id_to_index[&id]),
+                Input::Block(id) => {
+                  let input_block = &json_target.blocks[id];
+                  if input_block.opcode == "argument_reporter_string_number" {
+                    if let Input::Value(value) = &input_block.inputs["VALUE"] {
+                      if let Value::Float(index) = value {
+                        block::Input::Argument(*index as usize)
+                      } else {
+                        panic!("{input_block:#?}")
+                      }
+                    } else {
+                      panic!()
+                    }
+                  } else {
+                    block::Input::Block(id_to_index[&id])
+                  }
+                }
                 Input::Broadcast(broadcast) => {
                   block::Input::Broadcast(block::BroadcastInput {
                     name: broadcast.name.clone(),
