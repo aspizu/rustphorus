@@ -82,7 +82,7 @@ impl Value {
     }
   }
 
-  pub fn is_whitespace(&self) -> bool {
+  pub fn _is_whitespace(&self) -> bool {
     match self {
       Value::String(string) => string.trim().len() == 0,
       _ => false,

@@ -310,26 +310,37 @@ fn execute_block(
       refresh = true;
     }
     "data_setvariableto" => {
-      if let Input::Variable(variable) = &block.inputs["VARIABLE"] {
-        if variable.is_global {
-          panic!();
-        } else {
-          state.variables[variable.id] =
-            aux_value(data, state, &block.inputs["VALUE"], script);
-        }
+      let Input::Variable(variable) = &block.inputs["VARIABLE"] else { panic!() };
+      if variable.is_global {
+        panic!();
       }
+      state.variables[variable.id] =
+        aux_value(data, state, &block.inputs["VALUE"], script);
     }
     "data_changevariableby" => {
-      if let Input::Variable(variable) = &block.inputs["VARIABLE"] {
-        if variable.is_global {
-          panic!();
-        } else {
-          state.variables[variable.id] = Value::Float(
-            state.variables[variable.id].to_f64()
-              + aux_f64(data, state, &block.inputs["VALUE"], script),
-          );
-        }
+      let Input::Variable(variable) = &block.inputs["VARIABLE"] else { panic!() };
+      if variable.is_global {
+        panic!();
       }
+      state.variables[variable.id] = Value::Float(
+        state.variables[variable.id].to_f64()
+          + aux_f64(data, state, &block.inputs["VALUE"], script),
+      );
+    }
+    "data_deletealloflist" => {
+      let Input::List(list) = &block.inputs["LIST"] else { panic!(); };
+      if list.is_global {
+        panic!();
+      }
+      state.lists[list.id].clear();
+    }
+    "data_addtolist" => {
+      let Input::List(list) = &block.inputs["LIST"] else { panic!(); };
+      if list.is_global {
+        panic!();
+      }
+      let value = aux_value(data, state, &block.inputs["ITEM"], script);
+      state.lists[list.id].push(value);
     }
     _ => panic!("I don't know how to execute: {block:#?}"),
   }
@@ -504,6 +515,26 @@ fn evaluate_block(
       }
       _ => panic!(),
     }),
+    "data_lengthoflist" => {
+      let Input::List(list) = &block.inputs["LIST"] else { panic!() };
+      if list.is_global {
+        panic!();
+      }
+      Value::Float(state.lists[list.id].len() as f64)
+    }
+    "data_itemoflist" => {
+      let Input::List(list) = &block.inputs["LIST"] else { panic!() };
+      if list.is_global {
+        panic!();
+      }
+      let list = &state.lists[list.id];
+      let index = aux_f64(data, state, &block.inputs["INDEX"], script).floor();
+      if 0. < index && index <= list.len() as f64 {
+        list[index as usize - 1].clone()
+      } else {
+        Value::String(format!(""))
+      }
+    }
     _ => {
       panic!("I don't know how to evaluate: {block:#?}")
     }
