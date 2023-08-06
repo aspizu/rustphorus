@@ -5,9 +5,11 @@ use std::io::BufReader;
 use sdl2::image::LoadTexture;
 use sdl2::render::TextureCreator;
 use sdl2::video::WindowContext;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 
 use crate::block;
+use crate::block::CustomBlock;
 use crate::block::Value;
 use crate::project;
 use crate::project::Config;
@@ -82,9 +84,39 @@ fn default_rotation_style() -> String {
 struct Block {
   opcode: String,
   next: Option<String>,
-  parent: Option<String>,
+  // parent: Option<String>,
   inputs: HashMap<String, Input>,
   fields: HashMap<String, Field>,
+  #[serde(default = "no_mutation")]
+  mutation: Mutation,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Mutation {
+  proccode: String,
+  #[serde(deserialize_with = "parse_json")]
+  argumentids: Vec<String>,
+  #[serde(deserialize_with = "parse_json")]
+  warp: bool,
+}
+
+fn no_mutation() -> Mutation {
+  Mutation {
+    proccode: format!(""),
+    argumentids: vec![],
+    warp: false,
+  }
+}
+
+fn parse_json<'de, D, T>(de: D) -> Result<T, D::Error>
+where
+  D: Deserializer<'de>,
+  T: DeserializeOwned,
+{
+  let json_string = <String>::deserialize(de).unwrap();
+  let array: T = serde_json::from_str(json_string.as_str()).unwrap();
+  Ok(array)
 }
 
 #[derive(Deserialize)]
@@ -252,6 +284,14 @@ pub fn load<'a>(
   // Convert fields into inputs
   for target in &mut json_project.targets {
     for block in target.blocks.values_mut() {
+      // Convert mutation into inputs
+      if block.opcode == "procedures_call" {
+        block.inputs.insert(
+          format!("PROCCODE"),
+          Input::Value(Value::String(block.mutation.proccode.clone())),
+        );
+      }
+
       for (key, field) in &block.fields {
         block.inputs.insert(
           key.clone(),
@@ -323,9 +363,12 @@ pub fn load<'a>(
       data: target::TargetData {
         is_stage: json_target.is_stage,
         blocks: Vec::new(),
-        costume_index_to_name: Vec::with_capacity(json_target.costumes.len()),
+        costume_index_to_name: Vec::with_capacity(json_target.costumes.len()), // DONE
         costume_name_to_index: HashMap::with_capacity(json_target.costumes.len()), // DONE
-        costume_index_to_texture_index: HashMap::new(), // DONE
+        costume_index_to_texture_index: HashMap::with_capacity(
+          json_target.costumes.len(),
+        ), // DONE
+        custom_blocks: HashMap::new(),
       },
       state: target::TargetState {
         visible: json_target.visible,
@@ -391,16 +434,33 @@ pub fn load<'a>(
     }
     for id in index_to_id {
       let block = &json_target.blocks[id];
+      if block.opcode == "procedures_definition" {
+        if let Input::Block(id) = &block.inputs["custom_block"] {
+          let custom_block = &json_target.blocks[id];
+          target.data.custom_blocks.insert(
+            custom_block.mutation.proccode.clone(),
+            CustomBlock {
+              next: block
+                .next
+                .as_ref()
+                .and_then(|next| Some(id_to_index[next]))
+                .unwrap_or(0),
+              argument_ids: custom_block.mutation.argumentids.clone(),
+              refresh: custom_block.mutation.warp,
+            },
+          );
+        }
+      }
       target.data.blocks.push(block::Block {
         opcode: block.opcode.clone(),
         next: match &block.next {
           Some(next) => id_to_index[&next],
           None => 0,
         },
-        parent: match &block.parent {
-          Some(parent) => id_to_index[&parent],
-          None => 0,
-        },
+        // parent: match &block.parent {
+        //   Some(parent) => id_to_index[&parent],
+        //   None => 0,
+        // },
         inputs: block
           .inputs
           .iter()

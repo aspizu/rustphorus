@@ -1,14 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum Value {
-  Float(f64),
-  String(String),
-  Bool(bool),
-}
-
 fn compare_string(s1: &str, s2: &str) -> f64 {
   let s1 = s1.to_lowercase();
   let s2 = s2.to_lowercase();
@@ -158,6 +150,14 @@ impl Value {
   }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum Value {
+  Float(f64),
+  String(String),
+  Bool(bool),
+}
+
 #[derive(Debug)]
 pub enum Input {
   Block(usize),
@@ -189,6 +189,13 @@ pub struct ListInput {
 pub struct Block {
   pub opcode: String,
   pub next: usize,
-  pub parent: usize,
+  // pub parent: usize,
   pub inputs: HashMap<String, Input>,
+}
+
+#[derive(Debug)]
+pub struct CustomBlock {
+  pub next: usize,
+  pub argument_ids: Vec<String>,
+  pub refresh: bool,
 }

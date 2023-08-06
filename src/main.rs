@@ -1,5 +1,5 @@
 use project::{Config, Project};
-use sdl2::{event::Event, pixels::Color};
+use sdl2::event::Event;
 use std::{thread::sleep, time::Duration};
 
 mod block;
@@ -9,6 +9,7 @@ mod script;
 mod target;
 
 fn main() {
+  pretty_env_logger::init();
   let config = Config {
     stage_width: 480,
     stage_height: 360,
@@ -17,7 +18,6 @@ fn main() {
   let sdl_context = sdl2::init().unwrap();
   let ttf_context = sdl2::ttf::init().unwrap();
   let font = ttf_context.load_font("font.ttf", 16).unwrap();
-
   let video_subsystem = sdl_context.video().unwrap();
   let window = video_subsystem
     .window("Rustphorus", config.stage_width, config.stage_height)
@@ -41,8 +41,8 @@ fn main() {
         _ => {}
       }
     }
-    project.execute_scripts();
     project.render(&mut canvas, &texture_creator, &font);
+    project.execute_scripts();
     canvas.present();
     sleep(duration);
   }

@@ -1,7 +1,7 @@
 use crate::{
-  block::{Block, Input, Value},
+  block::{Block, CustomBlock, Input, Value},
   project::{Config, Texture},
-  script::Script,
+  script::{Script, StackFrame},
 };
 use derivative::Derivative;
 use sdl2::{
@@ -90,103 +90,293 @@ impl<'a> Target<'a> {
   pub fn start_scripts(&mut self) {
     for (index, block) in self.data.blocks.iter().enumerate() {
       match block.opcode.as_str() {
-        "event_whenflagclicked" => self.scripts.push(Script { id: index + 1 }),
+        "event_whenflagclicked" => self.scripts.push(Script {
+          id: index + 1,
+          stack: vec![],
+          arguments: vec![],
+          refresh: true,
+        }),
         _ => {}
       }
     }
   }
 
   pub fn execute_scripts(&mut self) {
-    self.scripts.retain_mut(|script| {
-      script.id = execute_block(&self.data, &mut self.state, script.id);
-      script.id != 0
+    self.scripts.retain_mut(|script| loop {
+      let (terminate, refresh) = execute_script(&self.data, &mut self.state, script);
+      if terminate || script.refresh && refresh {
+        return !terminate;
+      }
     });
   }
 }
 
-fn execute_block(data: &TargetData, state: &mut TargetState, id: usize) -> usize {
+/// Returns (should terminate, should refresh screen)
+fn execute_script(
+  data: &TargetData,
+  state: &mut TargetState,
+  script: &mut Script,
+) -> (bool, bool) {
+  let mut terminate = false;
+  let mut refresh = false;
+  let block = &data.blocks[script.id - 1];
+  log::trace!("{block:#?}");
+  match block.opcode.as_str() {
+    "control_repeat" => {
+      let iterations = aux_f64(data, state, &block.inputs["TIMES"], script) as u32;
+      if iterations > 0 {
+        let jump_id = aux_id(&block.inputs["SUBSTACK"]);
+        script.stack.push(StackFrame::Repeat {
+          iterations: iterations as u32,
+          jump_id,
+          return_id: block.next,
+        });
+        script.id = jump_id;
+      }
+    }
+    "control_if_else" => {
+      if aux_bool(data, state, &block.inputs["CONDITION"], script) {
+        script.id = aux_id(&block.inputs["SUBSTACK"]);
+      } else {
+        script.id = aux_id(&block.inputs["SUBSTACK2"]);
+      }
+      script.stack.push(StackFrame::Goto(block.next));
+    }
+    "control_if" => {
+      if aux_bool(data, state, &block.inputs["CONDITION"], script) {
+        script.id = aux_id(&block.inputs["SUBSTACK"]);
+        script.stack.push(StackFrame::Goto(block.next));
+      } else {
+        script.id = block.next;
+      }
+    }
+    "procedures_call" => {
+      let custom_block = aux_field(block, "PROCCODE", |s| &data.custom_blocks[s]);
+      script.stack.push(StackFrame::CustomBlock {
+        argument_count: custom_block.argument_ids.len(),
+        return_id: block.next,
+        refresh_was_set_false: script.refresh && !custom_block.refresh,
+      });
+      script.id = custom_block.next;
+      for id in &custom_block.argument_ids {
+        script
+          .arguments
+          .push(aux_value(data, state, &block.inputs[id], script));
+      }
+      if script.refresh && !custom_block.refresh {
+        script.refresh = false;
+      }
+    }
+    _ => {
+      refresh = execute_block(data, state, script.id, &script);
+      script.id = block.next;
+    }
+  }
+  #[allow(unused_assignments)]
+  let mut pop = false;
+  while script.id == 0 {
+    if script.stack.last().is_some() {
+      log::trace!("{script:#?}");
+    }
+    if let Some(item) = script.stack.last_mut() {
+      match item {
+        StackFrame::Repeat {
+          iterations,
+          jump_id,
+          return_id,
+        } => {
+          *iterations -= 1;
+          if *iterations > 0 {
+            script.id = *jump_id;
+            break;
+          } else {
+            script.id = *return_id;
+            pop = true;
+          }
+        }
+        StackFrame::Goto(id) => {
+          script.id = *id;
+          pop = true;
+        }
+        StackFrame::CustomBlock {
+          argument_count,
+          return_id,
+          refresh_was_set_false,
+        } => {
+          script.id = *return_id;
+          if *refresh_was_set_false {
+            script.refresh = true;
+          }
+          script
+            .arguments
+            .truncate(script.arguments.len() - *argument_count);
+          pop = true;
+        }
+      }
+    } else {
+      break;
+    }
+    if pop {
+      script.stack.pop();
+    }
+  }
+  if script.id == 0 {
+    log::trace!("terminated");
+    terminate = true;
+  }
+  return (terminate, refresh);
+}
+
+fn get_argument(block: &Block, script: &Script) -> Value {}
+
+fn get_direction(direction: f64) -> Option<f64> {
+  if direction == 0. || direction.is_normal() {
+    Some(wrap_clamp(direction, -179., 180.))
+  } else {
+    None
+  }
+}
+
+fn wrap_clamp(value: f64, min: f64, max: f64) -> f64 {
+  let range = (max - min) + 1.;
+  value - ((value - min) / range).floor() * range
+}
+
+/// Returns true if screen should be refreshed
+fn execute_block(
+  data: &TargetData,
+  state: &mut TargetState,
+  id: usize,
+  script: &Script,
+) -> bool {
+  let mut refresh = false;
   let block = &data.blocks[id - 1];
   match block.opcode.as_str() {
     "event_whenflagclicked" => {}
     "motion_gotoxy" => {
-      state.x = aux_f64(data, state, &block.inputs["X"]);
-      state.y = aux_f64(data, state, &block.inputs["Y"]);
+      state.x = aux_f64(data, state, &block.inputs["X"], script);
+      state.y = aux_f64(data, state, &block.inputs["Y"], script);
     }
-    "motion_setx" => state.x = aux_f64(data, state, &block.inputs["X"]),
+    "motion_setx" => state.x = aux_f64(data, state, &block.inputs["X"], script),
     "motion_pointindirection" => {
-      state.direction = aux_f64(data, state, &block.inputs["DIRECTION"])
+      if let Some(direction) =
+        get_direction(aux_f64(data, state, &block.inputs["DIRECTION"], script))
+      {
+        log::trace!("direction: {direction}");
+        state.direction = direction;
+      }
+      refresh = true;
+    }
+    "motion_turnright" => {
+      if let Some(direction) = get_direction(
+        state.direction + aux_f64(data, state, &block.inputs["DEGREES"], script),
+      ) {
+        log::trace!("direction: {direction}");
+        state.direction = direction;
+      }
+      refresh = true;
+    }
+    "motion_turnleft" => {
+      if let Some(direction) = get_direction(
+        state.direction - aux_f64(data, state, &block.inputs["DEGREES"], script),
+      ) {
+        state.direction = direction;
+      }
+      refresh = true;
     }
     "looks_say" => {
-      state.say = Some(Say {
-        message: aux_string(data, state, &block.inputs["MESSAGE"]).to_string(),
-        texture: None,
-      });
+      let message =
+        aux_string(data, state, &block.inputs["MESSAGE"], script).to_string();
+      log::info!("{message}");
+      state.say = if message.len() == 0 {
+        None
+      } else {
+        Some(Say {
+          message,
+          texture: None,
+        })
+      };
+      refresh = true;
     }
     _ => panic!("I don't know how to execute: {block:#?}"),
   }
-  block.next
+  refresh
 }
 
-fn evaluate_block(data: &TargetData, state: &TargetState, id: usize) -> Value {
+fn evaluate_block(
+  data: &TargetData,
+  state: &TargetState,
+  id: usize,
+  script: &Script,
+) -> Value {
   let block = &data.blocks[id - 1];
   match block.opcode.as_str() {
     "operator_add" => Value::Float(
-      aux_f64(data, state, &block.inputs["NUM1"])
-        + aux_f64(data, state, &block.inputs["NUM2"]),
+      aux_f64(data, state, &block.inputs["NUM1"], script)
+        + aux_f64(data, state, &block.inputs["NUM2"], script),
     ),
     "operator_subtract" => Value::Float(
-      aux_f64(data, state, &block.inputs["NUM1"])
-        - aux_f64(data, state, &block.inputs["NUM2"]),
+      aux_f64(data, state, &block.inputs["NUM1"], script)
+        - aux_f64(data, state, &block.inputs["NUM2"], script),
     ),
     "operator_multiply" => Value::Float(
-      aux_f64(data, state, &block.inputs["NUM1"])
-        * aux_f64(data, state, &block.inputs["NUM2"]),
+      aux_f64(data, state, &block.inputs["NUM1"], script)
+        * aux_f64(data, state, &block.inputs["NUM2"], script),
     ),
     "operator_divide" => Value::Float(
-      aux_f64(data, state, &block.inputs["NUM1"])
-        / aux_f64(data, state, &block.inputs["NUM2"]),
+      aux_f64(data, state, &block.inputs["NUM1"], script)
+        / aux_f64(data, state, &block.inputs["NUM2"], script),
     ),
     "operator_equals" => Value::Bool(
-      aux_value(data, state, &block.inputs["OPERAND1"]).compare(&aux_value(
+      aux_value(data, state, &block.inputs["OPERAND1"], script).compare(&aux_value(
         data,
         state,
         &block.inputs["OPERAND2"],
+        script,
       )) == 0.,
     ),
     "operator_gt" => Value::Bool(
-      aux_value(data, state, &block.inputs["OPERAND1"]).compare(&aux_value(
+      aux_value(data, state, &block.inputs["OPERAND1"], script).compare(&aux_value(
         data,
         state,
         &block.inputs["OPERAND2"],
+        script,
       )) > 0.,
     ),
     "operator_lt" => Value::Bool(
-      aux_value(data, state, &block.inputs["OPERAND1"]).compare(&aux_value(
+      aux_value(data, state, &block.inputs["OPERAND1"], script).compare(&aux_value(
         data,
         state,
         &block.inputs["OPERAND2"],
+        script,
       )) < 0.,
     ),
-    "operator_letter_of" => {
-      Value::String(aux_map_as_str(data, state, &block.inputs["STRING"], |s| {
+    "operator_letter_of" => Value::String(aux_map_as_str(
+      data,
+      state,
+      &block.inputs["STRING"],
+      script,
+      |s| {
         s.chars()
-          .nth(aux_f64(data, state, &block.inputs["LETTER"]) as usize - 1)
+          .nth(aux_f64(data, state, &block.inputs["LETTER"], script) as usize - 1)
           .and_then(|c| Some(c.to_string()))
           .unwrap_or(format!(""))
-      }))
-    }
+      },
+    )),
     "operator_and" => Value::Bool(
-      aux_bool(data, state, &block.inputs["OPERAND1"])
-        && aux_bool(data, state, &block.inputs["OPERAND2"]),
+      aux_bool(data, state, &block.inputs["OPERAND1"], script)
+        && aux_bool(data, state, &block.inputs["OPERAND2"], script),
     ),
     "operator_or" => Value::Bool(
-      aux_bool(data, state, &block.inputs["OPERAND1"])
-        || aux_bool(data, state, &block.inputs["OPERAND2"]),
+      aux_bool(data, state, &block.inputs["OPERAND1"], script)
+        || aux_bool(data, state, &block.inputs["OPERAND2"], script),
     ),
-    "operator_not" => Value::Bool(!aux_bool(data, state, &block.inputs["OPERAND"])),
+    "operator_not" => {
+      Value::Bool(!aux_bool(data, state, &block.inputs["OPERAND"], script))
+    }
     "operator_random" => Value::Float({
-      let from = aux_value(data, state, &block.inputs["FROM"]);
-      let to = aux_value(data, state, &block.inputs["TO"]);
+      let from = aux_value(data, state, &block.inputs["FROM"], script);
+      let to = aux_value(data, state, &block.inputs["TO"], script);
       let n_from = from.to_f64();
       let n_to = to.to_f64();
       let (low, high) = if n_from <= n_to {
@@ -206,30 +396,33 @@ fn evaluate_block(data: &TargetData, state: &TargetState, id: usize) -> Value {
       data,
       state,
       &block.inputs["STRING1"],
+      script,
       |s1| {
-        aux_map_as_str(data, state, &block.inputs["STRING2"], |s2| {
+        aux_map_as_str(data, state, &block.inputs["STRING2"], script, |s2| {
           format!("{s1}{s2}")
         })
       },
     )),
     "operator_length" => {
       Value::Float(
-        aux_map_as_str(data, state, &block.inputs["STRING"], |s| s.len()) as f64,
+        aux_map_as_str(data, state, &block.inputs["STRING"], script, |s| s.len())
+          as f64,
       )
     }
     "operator_contains" => Value::Bool(aux_map_as_str(
       data,
       state,
       &block.inputs["STRING1"],
+      script,
       |s1| {
-        aux_map_as_str(data, state, &block.inputs["STRING2"], |s2| {
+        aux_map_as_str(data, state, &block.inputs["STRING2"], script, |s2| {
           s1.to_lowercase().contains(s2.to_lowercase().as_str())
         })
       },
     )),
     "operator_mod" => Value::Float({
-      let n = aux_f64(data, state, &block.inputs["NUM1"]);
-      let modulus = aux_f64(data, state, &block.inputs["NUM2"]);
+      let n = aux_f64(data, state, &block.inputs["NUM1"], script);
+      let modulus = aux_f64(data, state, &block.inputs["NUM2"], script);
       let mut result = n % modulus;
       if result / modulus < 0. {
         result += modulus;
@@ -237,10 +430,10 @@ fn evaluate_block(data: &TargetData, state: &TargetState, id: usize) -> Value {
       result
     }),
     "operator_round" => {
-      Value::Float(aux_f64(data, state, &block.inputs["NUM"]).round())
+      Value::Float(aux_f64(data, state, &block.inputs["NUM"], script).round())
     }
     "operator_mathop" => {
-      let value = aux_f64(data, state, &block.inputs["NUM"]);
+      let value = aux_f64(data, state, &block.inputs["NUM"], script);
       Value::Float(aux_field(block, "OPERATOR", |operator| match operator {
         "abs" => value.abs(),
         "floor" => value.floor(),
@@ -278,6 +471,7 @@ fn evaluate_block(data: &TargetData, state: &TargetState, id: usize) -> Value {
       }
       _ => panic!(),
     }),
+    "argument_reporter_string_number" => get_argument(block, script),
     _ => {
       panic!("I don't know how to evaluate: {block:#?}")
     }
@@ -305,36 +499,56 @@ fn truncate_float(value: f64) -> f64 {
   format!("{:.10}", value).parse().unwrap()
 }
 
-fn aux_f64(data: &TargetData, state: &TargetState, input: &Input) -> f64 {
+fn aux_f64(
+  data: &TargetData,
+  state: &TargetState,
+  input: &Input,
+  script: &Script,
+) -> f64 {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id).to_f64(),
+    Input::Block(id) => evaluate_block(data, state, *id, script).to_f64(),
     Input::Value(value) => value.to_f64(),
     Input::Variable(variable) => state.variables[variable.id].to_f64(),
     _ => 0.,
   }
 }
 
-fn aux_bool(data: &TargetData, state: &TargetState, input: &Input) -> bool {
+fn aux_bool(
+  data: &TargetData,
+  state: &TargetState,
+  input: &Input,
+  script: &Script,
+) -> bool {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id).to_bool(),
+    Input::Block(id) => evaluate_block(data, state, *id, script).to_bool(),
     Input::Value(value) => value.to_bool(),
     Input::Variable(variable) => state.variables[variable.id].to_bool(),
     _ => false,
   }
 }
 
-fn aux_string(data: &TargetData, state: &TargetState, input: &Input) -> String {
+fn aux_string(
+  data: &TargetData,
+  state: &TargetState,
+  input: &Input,
+  script: &Script,
+) -> String {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id).to_string(),
+    Input::Block(id) => evaluate_block(data, state, *id, script).to_string(),
     Input::Value(value) => value.to_string(),
     Input::Variable(variable) => state.variables[variable.id].to_string(),
     _ => panic!(),
   }
 }
 
-fn aux_value(data: &TargetData, state: &TargetState, input: &Input) -> Value {
+fn aux_value(
+  data: &TargetData,
+  state: &TargetState,
+  input: &Input,
+  script: &Script,
+) -> Value {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id),
+    Input::Block(id) => evaluate_block(data, state, *id, script),
     Input::Value(value) => value.clone(),
     Input::Variable(variable) => state.variables[variable.id].clone(),
     _ => panic!(),
@@ -355,10 +569,11 @@ fn aux_map_as_str<T, F: FnOnce(&str) -> T>(
   data: &TargetData,
   state: &TargetState,
   input: &Input,
+  script: &Script,
   map: F,
 ) -> T {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id).map_as_str(map),
+    Input::Block(id) => evaluate_block(data, state, *id, script).map_as_str(map),
     Input::Value(value) => value.map_as_str(map),
     Input::Variable(variable) => state.variables[variable.id].map_as_str(map),
     _ => panic!(),
@@ -376,6 +591,7 @@ fn aux_id(input: &Input) -> usize {
 pub struct TargetData {
   pub is_stage: bool,
   pub blocks: Vec<Block>,
+  pub custom_blocks: HashMap<String, CustomBlock>,
   pub costume_index_to_name: Vec<String>,
   pub costume_name_to_index: HashMap<String, usize>,
   pub costume_index_to_texture_index: HashMap<usize, usize>,
