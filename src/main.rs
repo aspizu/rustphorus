@@ -29,7 +29,8 @@ fn main() {
   let mut event_pump = sdl_context.event_pump().unwrap();
   let texture_creator = canvas.texture_creator();
   let mut project = Project::load("project.sb3", &texture_creator, config);
-  // println!("{project:#?}"); panic!();
+  //println!("{project:#?}");
+  //panic!();
   project.start_scripts();
   let duration = Duration::new(0, 1_000_000_000u32 / project.config.frame_rate);
   'main: loop {

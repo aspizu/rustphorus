@@ -309,6 +309,28 @@ fn execute_block(
       };
       refresh = true;
     }
+    "data_setvariableto" => {
+      if let Input::Variable(variable) = &block.inputs["VARIABLE"] {
+        if variable.is_global {
+          panic!();
+        } else {
+          state.variables[variable.id] =
+            aux_value(data, state, &block.inputs["VALUE"], script);
+        }
+      }
+    }
+    "data_changevariableby" => {
+      if let Input::Variable(variable) = &block.inputs["VARIABLE"] {
+        if variable.is_global {
+          panic!();
+        } else {
+          state.variables[variable.id] = Value::Float(
+            state.variables[variable.id].to_f64()
+              + aux_f64(data, state, &block.inputs["VALUE"], script),
+          );
+        }
+      }
+    }
     _ => panic!("I don't know how to execute: {block:#?}"),
   }
   refresh

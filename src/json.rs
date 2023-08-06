@@ -206,48 +206,55 @@ impl<'de> Deserialize<'de> for Input {
             while seq.next_element::<serde_json::Value>()?.is_some() {}
             return Ok(Input::Block(string));
           }
-          Some(T::Values(mut values)) => match values[0].to_f64() as i32 {
-            4 | 5 | 6 | 7 | 8 | 9 | 10 => {
-              return Ok(Input::Value(values.remove(1)));
+          Some(T::Values(mut values)) => {
+            //
+            match values[0].to_f64() as i32 {
+              4 | 5 | 6 | 7 | 8 | 9 | 10 => {
+                while seq.next_element::<serde_json::Value>()?.is_some() {}
+                return Ok(Input::Value(values.remove(1)));
+              }
+              11 => {
+                while seq.next_element::<serde_json::Value>()?.is_some() {}
+                return Ok(Input::Broadcast(BroadcastInput {
+                  name: match values.remove(1) {
+                    Value::String(string) => string,
+                    _ => panic!(),
+                  },
+                  id: match values.remove(1) {
+                    Value::String(string) => string,
+                    _ => panic!(),
+                  },
+                }));
+              }
+              12 => {
+                while seq.next_element::<serde_json::Value>()?.is_some() {}
+                return Ok(Input::Variable(VariableInput {
+                  name: match values.remove(1) {
+                    Value::String(string) => string,
+                    _ => panic!(),
+                  },
+                  id: match values.remove(1) {
+                    Value::String(string) => string,
+                    _ => panic!(),
+                  },
+                }));
+              }
+              13 => {
+                while seq.next_element::<serde_json::Value>()?.is_some() {}
+                return Ok(Input::List(ListInput {
+                  name: match values.remove(1) {
+                    Value::String(string) => string,
+                    _ => panic!(),
+                  },
+                  id: match values.remove(1) {
+                    Value::String(string) => string,
+                    _ => panic!(),
+                  },
+                }));
+              }
+              _ => panic!(),
             }
-            11 => {
-              return Ok(Input::Broadcast(BroadcastInput {
-                name: match values.remove(1) {
-                  Value::String(string) => string,
-                  _ => panic!(),
-                },
-                id: match values.remove(1) {
-                  Value::String(string) => string,
-                  _ => panic!(),
-                },
-              }));
-            }
-            12 => {
-              return Ok(Input::Variable(VariableInput {
-                name: match values.remove(1) {
-                  Value::String(string) => string,
-                  _ => panic!(),
-                },
-                id: match values.remove(1) {
-                  Value::String(string) => string,
-                  _ => panic!(),
-                },
-              }));
-            }
-            13 => {
-              return Ok(Input::List(ListInput {
-                name: match values.remove(1) {
-                  Value::String(string) => string,
-                  _ => panic!(),
-                },
-                id: match values.remove(1) {
-                  Value::String(string) => string,
-                  _ => panic!(),
-                },
-              }));
-            }
-            _ => panic!(),
-          },
+          }
           None => panic!(),
         }
       }
