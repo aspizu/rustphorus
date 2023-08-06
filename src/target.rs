@@ -152,19 +152,22 @@ fn execute_script(
       }
     }
     "procedures_call" => {
+      log::trace!("{script:#?}");
       let custom_block = aux_field(block, "PROCCODE", |s| &data.custom_blocks[s]);
-      script.arguments_start = script.arguments.len();
       script.stack.push(StackFrame::CustomBlock {
         argument_count: custom_block.argument_ids.len(),
         return_id: block.next,
         refresh_was_set_false: script.refresh && !custom_block.refresh,
+        old_arguments_start: script.arguments_start,
       });
+      let new_arguments_start = script.arguments.len();
       script.id = custom_block.next;
       for id in &custom_block.argument_ids {
         script
           .arguments
           .push(aux_value(data, state, &block.inputs[id], script));
       }
+      script.arguments_start = new_arguments_start;
       if script.refresh && !custom_block.refresh {
         script.refresh = false;
       }
@@ -204,15 +207,16 @@ fn execute_script(
           argument_count,
           return_id,
           refresh_was_set_false,
+          old_arguments_start,
         } => {
           script.id = *return_id;
           if *refresh_was_set_false {
             script.refresh = true;
           }
-          script.arguments_start -= *argument_count;
           script
             .arguments
             .truncate(script.arguments.len() - *argument_count);
+          script.arguments_start = *old_arguments_start;
           pop = true;
         }
       }
@@ -231,6 +235,7 @@ fn execute_script(
 }
 
 fn get_argument(index: usize, script: &Script) -> Value {
+  log::trace!("({index}, {script:#?})");
   let peek = script.arguments_start + index;
   script.arguments[peek].clone()
 }

@@ -21,5 +21,6 @@ pub enum StackFrame {
     argument_count: usize,
     return_id: usize,
     refresh_was_set_false: bool,
+    old_arguments_start: usize,
   },
 }
