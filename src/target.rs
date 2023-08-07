@@ -30,6 +30,9 @@ impl<'a> Target<'a> {
     font: &Font,
     config: &Config,
   ) {
+    if !state.visible {
+      return;
+    }
     let texture =
       &textures[data.costume_index_to_texture_index[&state.current_costume]];
     let query = texture.texture.query();
@@ -54,19 +57,17 @@ impl<'a> Target<'a> {
         flip = state.direction < 0.;
       }
     }
-    if state.visible {
-      canvas
-        .copy_ex(
-          &texture.texture,
-          None,
-          Rect::new(x, y, width as u32, height as u32),
-          angle,
-          None,
-          false,
-          flip,
-        )
-        .unwrap();
-    }
+    canvas
+      .copy_ex(
+        &texture.texture,
+        None,
+        Rect::new(x, y, width as u32, height as u32),
+        angle,
+        None,
+        false,
+        flip,
+      )
+      .unwrap();
     if let Some(ref mut say) = &mut state.say {
       if say.texture.is_none() {
         say.texture = Some(
