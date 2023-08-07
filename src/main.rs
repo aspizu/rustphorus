@@ -1,5 +1,6 @@
 use project::{Config, Project};
 use sdl2::event::Event;
+use std::env::args;
 use std::{thread::sleep, time::Duration};
 
 mod block;
@@ -28,11 +29,23 @@ fn main() {
   let mut canvas = window.into_canvas().build().unwrap();
   let mut event_pump = sdl_context.event_pump().unwrap();
   let texture_creator = canvas.texture_creator();
-  let mut project = Project::load("project.sb3", &texture_creator, config);
+  let mut project = Project::load(
+    args().nth(1).expect("no path given").as_str(),
+    &texture_creator,
+    config,
+  );
   //println!("{project:#?}");
   //panic!();
   project.start_scripts();
   let duration = Duration::new(0, 1_000_000_000u32 / project.config.frame_rate);
+  // let pen = texture_creator
+  //   .create_texture(
+  //     None,
+  //     sdl2::render::TextureAccess::Streaming,
+  //     project.config.stage_width,
+  //     project.config.stage_height,
+  //   )
+  //   .unwrap();
   'main: loop {
     for event in event_pump.poll_iter() {
       match event {
