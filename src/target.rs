@@ -1,5 +1,6 @@
 use crate::{
   block::{Block, CustomBlock, Input, Value, VariableInput},
+  pen::PenInstruction,
   project::{Config, SharedState, Texture},
   script::{Script, StackFrame},
 };
@@ -298,6 +299,18 @@ fn execute_block(
       state.x = aux_f64(shared, data, state, &block.inputs["X"], script);
       refresh = true;
     }
+    "motion_sety" => {
+      state.y = aux_f64(shared, data, state, &block.inputs["Y"], script);
+      refresh = true;
+    }
+    "motion_changexby" => {
+      state.x += aux_f64(shared, data, state, &block.inputs["DX"], script);
+      refresh = true;
+    }
+    "motion_changeyby" => {
+      state.y += aux_f64(shared, data, state, &block.inputs["DY"], script);
+      refresh = true;
+    }
     "motion_pointindirection" => {
       if let Some(direction) = get_direction(aux_f64(
         shared,
@@ -377,9 +390,45 @@ fn execute_block(
       let size = aux_f64(shared, data, state, &block.inputs["SIZE"], script);
       state.size = size;
     }
+    "pen_clear" => {
+      shared.pen.clear();
+    }
+    "pen_setPenSizeTo" => {
+      let size = aux_f64(shared, data, state, &block.inputs["SIZE"], script);
+      if 0. < size {
+        state.pen.size = size as u32;
+      }
+    }
+    "pen_penDown" => {
+      state.pen.is_down = true;
+      state.pen.x = state.x;
+      state.pen.y = state.y;
+    }
+    "pen_penUp" => {
+      if state.pen.is_down {
+        update_pen(shared, state);
+      }
+      state.pen.is_down = false;
+    }
     _ => panic!("I don't know how to execute: {block:#?}"),
   }
   refresh
+}
+
+fn update_pen(shared: &mut SharedState, state: &mut TargetState) {
+  shared.pen.push_back(PenInstruction {
+    size: state.pen.size,
+    r: state.pen.r,
+    g: state.pen.g,
+    b: state.pen.b,
+    a: state.pen.a,
+    x1: state.pen.x,
+    y1: state.pen.y,
+    x2: state.x,
+    y2: state.y,
+  });
+  state.pen.x = state.x;
+  state.pen.y = state.y;
 }
 
 fn evaluate_block(
@@ -761,6 +810,20 @@ pub struct TargetState<'a> {
   pub variables: Vec<Value>,
   pub lists: Vec<Vec<Value>>,
   pub say: Option<Say<'a>>,
+  pub pen: PenState,
+}
+
+#[derive(Debug)]
+pub struct PenState {
+  pub is_down: bool,
+  pub size: u32,
+  pub r: u8,
+  pub g: u8,
+  pub b: u8,
+  pub a: u8,
+
+  pub x: f64,
+  pub y: f64,
 }
 
 #[derive(Debug)]

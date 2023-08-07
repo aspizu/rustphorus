@@ -1,3 +1,4 @@
+use std::collections::LinkedList;
 use std::thread::panicking;
 use std::{collections::HashMap, fs::remove_dir_all, process::Command};
 
@@ -12,6 +13,7 @@ use sdl2::{
 };
 
 use crate::block::Value;
+use crate::pen::{render_pen, PenInstruction};
 use crate::{json, target::Target};
 
 #[derive(Debug)]
@@ -27,6 +29,7 @@ pub struct Project<'a> {
 pub struct SharedState {
   pub global_variables: Vec<Value>,
   pub global_lists: Vec<Vec<Value>>,
+  pub pen: LinkedList<PenInstruction>,
 }
 
 #[derive(Debug)]
@@ -69,6 +72,12 @@ impl<'a> Project<'a> {
   ) {
     canvas.set_draw_color(Color::WHITE);
     canvas.clear();
+    render_pen(
+      self.config.stage_width,
+      self.config.stage_height,
+      canvas,
+      &self.shared_state.pen,
+    );
     for target in &mut self.targets {
       Target::render(
         &target.data,

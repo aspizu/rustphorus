@@ -5,6 +5,7 @@ use std::{thread::sleep, time::Duration};
 
 mod block;
 mod json;
+mod pen;
 mod project;
 mod script;
 mod target;
@@ -55,8 +56,8 @@ fn main() {
         _ => {}
       }
     }
-    project.render(&mut canvas, &texture_creator, &font);
     project.execute_scripts();
+    project.render(&mut canvas, &texture_creator, &font);
     canvas.present();
     sleep(duration);
   }

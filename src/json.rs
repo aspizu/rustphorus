@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, LinkedList};
 use std::fs::File;
 use std::io::BufReader;
 
@@ -14,7 +14,7 @@ use crate::block::Value;
 use crate::project::Config;
 use crate::project::Texture;
 use crate::project::{self, SharedState};
-use crate::target;
+use crate::target::{self, PenState};
 use serde::de::SeqAccess;
 use serde::de::Visitor;
 use std::fmt;
@@ -89,15 +89,17 @@ struct Block {
   #[serde(default = "no_mutation")]
   mutation: Mutation,
 }
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Mutation {
+  #[serde(default)]
   proccode: String,
-  #[serde(deserialize_with = "parse_json")]
+  #[serde(default, deserialize_with = "parse_json")]
   argumentids: Vec<String>,
   #[serde(default, deserialize_with = "parse_json")]
   argumentnames: Vec<String>,
-  #[serde(deserialize_with = "parse_json")]
+  #[serde(default, deserialize_with = "parse_json")]
   warp: bool,
 }
 
@@ -173,11 +175,35 @@ pub struct Field {
   pub id: Option<String>,
 }
 
-/* I did not write this */
 impl<'de> Deserialize<'de> for Field {
   fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-    let (value, id) = Deserialize::deserialize(de)?;
-    Ok(Self { value, id })
+    struct SeqVisitor;
+
+    impl<'de> Visitor<'de> for SeqVisitor {
+      type Value = Field;
+
+      fn expecting(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "Field")
+      }
+
+      fn visit_seq<A: SeqAccess<'de>>(
+        self,
+        mut seq: A,
+      ) -> Result<Self::Value, A::Error> {
+        match seq.next_element::<Value>()? {
+          Some(value) => match seq.next_element::<String>() {
+            Ok(Some(id)) => Ok(Field {
+              value,
+              id: Some(id),
+            }),
+            _ => Ok(Field { value, id: None }),
+          },
+          _ => panic!(),
+        }
+      }
+    }
+
+    de.deserialize_seq(SeqVisitor)
   }
 }
 
@@ -198,16 +224,21 @@ impl<'de> Deserialize<'de> for Input {
         #[serde(untagged)]
         enum T {
           String(String),
-          Values(Vec<Value>),
+          Values(Option<Vec<Value>>),
         }
-        let _shadow = seq.next_element::<i32>()?;
+        let _shadow = seq.next_element::<i32>()?.unwrap();
         match seq.next_element::<T>()? {
           Some(T::String(string)) => {
             while seq.next_element::<serde_json::Value>()?.is_some() {}
             return Ok(Input::Block(string));
           }
-          Some(T::Values(mut values)) => {
+          Some(T::Values(values)) => {
             //
+            if values.is_none() {
+              while seq.next_element::<serde_json::Value>()?.is_some() {}
+              return Ok(Input::Value(Value::Float(0.)));
+            }
+            let mut values = values.unwrap();
             match values[0].to_f64() as i32 {
               4 | 5 | 6 | 7 | 8 | 9 | 10 => {
                 while seq.next_element::<serde_json::Value>()?.is_some() {}
@@ -302,8 +333,9 @@ fn convert_argument_reporter(
     if let Some(parent_id) = &block.parent {
       id = parent_id;
     } else {
-      // reporter block is contained inside a rogue stack of blocks, no need to convert.
-      return None;
+      // reporter block is contained inside a rogue stack of blocks, return random argument id.
+      // This id should never be used!
+      return Some(0);
     }
   }
   let custom_block = &blocks[custom_block_id];
@@ -380,6 +412,11 @@ pub fn load<'a>(
                 name: format!("ghost"),
                 id: id.clone(),
               })
+            } else if key == "BROADCAST_OPTION" {
+              Input::Broadcast(BroadcastInput {
+                name: field.value.to_string(),
+                id: id.clone(),
+              })
             } else {
               panic!()
             }
@@ -399,6 +436,7 @@ pub fn load<'a>(
     shared_state: SharedState {
       global_variables: Vec::new(),
       global_lists: Vec::new(),
+      pen: LinkedList::new(),
     },
   };
   let json_stage = &json_project.targets[0];
@@ -454,6 +492,16 @@ pub fn load<'a>(
         custom_blocks: HashMap::new(),
       },
       state: target::TargetState {
+        pen: PenState {
+          is_down: false,
+          size: 1,
+          r: 0,
+          g: 0,
+          b: 255,
+          a: 0,
+          x: json_target.x,
+          y: json_target.y,
+        },
         visible: json_target.visible,
         x: json_target.x,
         y: json_target.y,
@@ -530,7 +578,7 @@ pub fn load<'a>(
                 .and_then(|next| Some(id_to_index[next]))
                 .unwrap_or(0),
               argument_ids: custom_block.mutation.argumentids.clone(),
-              refresh: custom_block.mutation.warp,
+              refresh: !custom_block.mutation.warp,
             },
           );
         }
@@ -589,10 +637,20 @@ pub fn load<'a>(
                       id: global_variables_id_to_index[&variable.id],
                     }),
                 ),
-                Input::List(list) => block::Input::List(block::ListInput {
-                  is_global: false,
-                  id: lists_id_to_index[&list.id],
-                }),
+                Input::List(list) => block::Input::List(
+                  lists_id_to_index
+                    .get(&list.id)
+                    .and_then(|id| {
+                      Some(block::ListInput {
+                        is_global: false,
+                        id: *id,
+                      })
+                    })
+                    .unwrap_or_else(|| block::ListInput {
+                      is_global: true,
+                      id: global_lists_id_to_index[&list.id],
+                    }),
+                ),
               },
             )
           })
