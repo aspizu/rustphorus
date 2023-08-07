@@ -6,6 +6,8 @@ What this means is that this is a program that runs Scratch projects (.sb3 files
 
 This is an very incomplete and inaccurate implementation.
 
+[Discord](https://discord.gg/URTsYdZe5m)
+
 # Development
 
 ```sh
