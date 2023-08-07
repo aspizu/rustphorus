@@ -20,6 +20,14 @@ pub struct Target<'a> {
   pub scripts: Vec<Script>,
 }
 
+fn clamp_size(size: f64) -> f64 {
+  if size < 0. {
+    0.
+  } else {
+    size
+  }
+}
+
 impl<'a> Target<'a> {
   pub fn render(
     data: &TargetData,
@@ -36,6 +44,7 @@ impl<'a> Target<'a> {
     let texture =
       &textures[data.costume_index_to_texture_index[&state.current_costume]];
     let query = texture.texture.query();
+    state.size = clamp_size(state.size);
     let scale = state.size / texture.bitmap_resolution as f64;
     let width = query.width as f64 * scale / 100.;
     let height = query.height as f64 * scale / 100.;
@@ -137,6 +146,12 @@ fn execute_script(
         });
         script.id = jump_id;
       }
+    }
+    "control_forever" => {
+      let jump_id = aux_id(&block.inputs["SUBSTACK"]);
+      script.stack.push(StackFrame::Goto(script.id));
+      script.id = jump_id;
+      refresh = true;
     }
     "control_if_else" => {
       if aux_bool(data, state, &block.inputs["CONDITION"], script) {
@@ -344,6 +359,10 @@ fn execute_block(
       }
       let value = aux_value(data, state, &block.inputs["ITEM"], script);
       state.lists[list.id].push(value);
+    }
+    "looks_setsizeto" => {
+      let size = aux_f64(data, state, &block.inputs["SIZE"], script);
+      state.size = size;
     }
     _ => panic!("I don't know how to execute: {block:#?}"),
   }
