@@ -54,17 +54,19 @@ impl<'a> Target<'a> {
         flip = state.direction < 0.;
       }
     }
-    canvas
-      .copy_ex(
-        &texture.texture,
-        None,
-        Rect::new(x, y, width as u32, height as u32),
-        angle,
-        None,
-        false,
-        flip,
-      )
-      .unwrap();
+    if state.visible {
+      canvas
+        .copy_ex(
+          &texture.texture,
+          None,
+          Rect::new(x, y, width as u32, height as u32),
+          angle,
+          None,
+          false,
+          flip,
+        )
+        .unwrap();
+    }
     if let Some(ref mut say) = &mut state.say {
       if say.texture.is_none() {
         say.texture = Some(
