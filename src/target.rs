@@ -49,7 +49,7 @@ impl<'a> Target<'a> {
     let width = query.width as f64 * scale / 100.;
     let height = query.height as f64 * scale / 100.;
     let x = config.stage_width as i32 / 2 + state.x as i32 - width as i32 / 2;
-    let y = config.stage_height as i32 / 2 + state.y as i32 - height as i32 / 2;
+    let y = (config.stage_height as i32 / 2 - state.y as i32) - height as i32 / 2;
     let angle: f64;
     let flip: bool;
     match state.rotation_style {
