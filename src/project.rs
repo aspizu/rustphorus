@@ -11,6 +11,7 @@ use sdl2::{
   video::WindowContext,
 };
 
+use crate::block::Value;
 use crate::{json, target::Target};
 
 #[derive(Debug)]
@@ -19,6 +20,13 @@ pub struct Project<'a> {
   pub target_name_to_target_index: HashMap<String, usize>,
   pub targets: Vec<Target<'a>>,
   pub textures: Vec<Texture<'a>>,
+  pub shared_state: SharedState,
+}
+
+#[derive(Debug)]
+pub struct SharedState {
+  pub global_variables: Vec<Value>,
+  pub global_lists: Vec<Vec<Value>>,
 }
 
 #[derive(Debug)]
@@ -82,7 +90,7 @@ impl<'a> Project<'a> {
 
   pub fn execute_scripts(&mut self) {
     for target in &mut self.targets {
-      target.execute_scripts();
+      target.execute_scripts(&mut self.shared_state);
     }
   }
 }

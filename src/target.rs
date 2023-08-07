@@ -1,6 +1,6 @@
 use crate::{
-  block::{Block, CustomBlock, Input, Value},
-  project::{Config, Texture},
+  block::{Block, CustomBlock, Input, Value, VariableInput},
+  project::{Config, SharedState, Texture},
   script::{Script, StackFrame},
 };
 use derivative::Derivative;
@@ -114,9 +114,10 @@ impl<'a> Target<'a> {
     }
   }
 
-  pub fn execute_scripts(&mut self) {
+  pub fn execute_scripts(&mut self, shared: &mut SharedState) {
     self.scripts.retain_mut(|script| loop {
-      let (terminate, refresh) = execute_script(&self.data, &mut self.state, script);
+      let (terminate, refresh) =
+        execute_script(shared, &self.data, &mut self.state, script);
       if terminate || script.refresh && refresh {
         return !terminate;
       }
@@ -126,6 +127,7 @@ impl<'a> Target<'a> {
 
 /// Returns (should terminate, should refresh screen)
 fn execute_script(
+  shared: &mut SharedState,
   data: &TargetData,
   state: &mut TargetState,
   script: &mut Script,
@@ -136,7 +138,8 @@ fn execute_script(
   log::trace!("{block:#?}");
   match block.opcode.as_str() {
     "control_repeat" => {
-      let iterations = aux_f64(data, state, &block.inputs["TIMES"], script) as u32;
+      let iterations =
+        aux_f64(shared, data, state, &block.inputs["TIMES"], script) as u32;
       if iterations > 0 {
         let jump_id = aux_id(&block.inputs["SUBSTACK"]);
         script.stack.push(StackFrame::Repeat {
@@ -151,10 +154,9 @@ fn execute_script(
       let jump_id = aux_id(&block.inputs["SUBSTACK"]);
       script.stack.push(StackFrame::Goto(script.id));
       script.id = jump_id;
-      refresh = true;
     }
     "control_if_else" => {
-      if aux_bool(data, state, &block.inputs["CONDITION"], script) {
+      if aux_bool(shared, data, state, &block.inputs["CONDITION"], script) {
         script.id = aux_id(&block.inputs["SUBSTACK"]);
       } else {
         script.id = aux_id(&block.inputs["SUBSTACK2"]);
@@ -162,7 +164,7 @@ fn execute_script(
       script.stack.push(StackFrame::Goto(block.next));
     }
     "control_if" => {
-      if aux_bool(data, state, &block.inputs["CONDITION"], script) {
+      if aux_bool(shared, data, state, &block.inputs["CONDITION"], script) {
         script.id = aux_id(&block.inputs["SUBSTACK"]);
         script.stack.push(StackFrame::Goto(block.next));
       } else {
@@ -181,9 +183,13 @@ fn execute_script(
       let new_arguments_start = script.arguments.len();
       script.id = custom_block.next;
       for id in &custom_block.argument_ids {
-        script
-          .arguments
-          .push(aux_value(data, state, &block.inputs[id], script));
+        script.arguments.push(aux_value(
+          shared,
+          data,
+          state,
+          &block.inputs[id],
+          script,
+        ));
       }
       script.arguments_start = new_arguments_start;
       if script.refresh && !custom_block.refresh {
@@ -191,7 +197,7 @@ fn execute_script(
       }
     }
     _ => {
-      refresh = execute_block(data, state, script.id, &script);
+      refresh = execute_block(shared, data, state, script.id, &script);
       script.id = block.next;
     }
   }
@@ -273,6 +279,7 @@ fn wrap_clamp(value: f64, min: f64, max: f64) -> f64 {
 
 /// Returns true if screen should be refreshed
 fn execute_block(
+  shared: &mut SharedState,
   data: &TargetData,
   state: &mut TargetState,
   id: usize,
@@ -283,14 +290,22 @@ fn execute_block(
   match block.opcode.as_str() {
     "event_whenflagclicked" => {}
     "motion_gotoxy" => {
-      state.x = aux_f64(data, state, &block.inputs["X"], script);
-      state.y = aux_f64(data, state, &block.inputs["Y"], script);
+      state.x = aux_f64(shared, data, state, &block.inputs["X"], script);
+      state.y = aux_f64(shared, data, state, &block.inputs["Y"], script);
+      refresh = true;
     }
-    "motion_setx" => state.x = aux_f64(data, state, &block.inputs["X"], script),
+    "motion_setx" => {
+      state.x = aux_f64(shared, data, state, &block.inputs["X"], script);
+      refresh = true;
+    }
     "motion_pointindirection" => {
-      if let Some(direction) =
-        get_direction(aux_f64(data, state, &block.inputs["DIRECTION"], script))
-      {
+      if let Some(direction) = get_direction(aux_f64(
+        shared,
+        data,
+        state,
+        &block.inputs["DIRECTION"],
+        script,
+      )) {
         log::trace!("direction: {direction}");
         state.direction = direction;
       }
@@ -298,7 +313,8 @@ fn execute_block(
     }
     "motion_turnright" => {
       if let Some(direction) = get_direction(
-        state.direction + aux_f64(data, state, &block.inputs["DEGREES"], script),
+        state.direction
+          + aux_f64(shared, data, state, &block.inputs["DEGREES"], script),
       ) {
         log::trace!("direction: {direction}");
         state.direction = direction;
@@ -307,7 +323,8 @@ fn execute_block(
     }
     "motion_turnleft" => {
       if let Some(direction) = get_direction(
-        state.direction - aux_f64(data, state, &block.inputs["DEGREES"], script),
+        state.direction
+          - aux_f64(shared, data, state, &block.inputs["DEGREES"], script),
       ) {
         state.direction = direction;
       }
@@ -315,7 +332,7 @@ fn execute_block(
     }
     "looks_say" => {
       let message =
-        aux_string(data, state, &block.inputs["MESSAGE"], script).to_string();
+        aux_string(shared, data, state, &block.inputs["MESSAGE"], script).to_string();
       log::info!("{message}");
       state.say = if message.len() == 0 {
         None
@@ -329,39 +346,35 @@ fn execute_block(
     }
     "data_setvariableto" => {
       let Input::Variable(variable) = &block.inputs["VARIABLE"] else { panic!() };
-      if variable.is_global {
-        panic!();
-      }
-      state.variables[variable.id] =
-        aux_value(data, state, &block.inputs["VALUE"], script);
+      let value = aux_value(shared, data, state, &block.inputs["VALUE"], script);
+      set_variable(shared, state, variable, |_| value);
     }
     "data_changevariableby" => {
       let Input::Variable(variable) = &block.inputs["VARIABLE"] else { panic!() };
-      if variable.is_global {
-        panic!();
-      }
-      state.variables[variable.id] = Value::Float(
-        state.variables[variable.id].to_f64()
-          + aux_f64(data, state, &block.inputs["VALUE"], script),
-      );
+      let change = aux_value(shared, data, state, &block.inputs["VALUE"], script);
+      set_variable(shared, state, variable, |value| {
+        Value::Float(value.to_f64() + change.to_f64())
+      });
     }
     "data_deletealloflist" => {
       let Input::List(list) = &block.inputs["LIST"] else { panic!(); };
       if list.is_global {
-        panic!();
+        shared.global_lists[list.id].clear();
+      } else {
+        state.lists[list.id].clear();
       }
-      state.lists[list.id].clear();
     }
     "data_addtolist" => {
       let Input::List(list) = &block.inputs["LIST"] else { panic!(); };
+      let value = aux_value(shared, data, state, &block.inputs["ITEM"], script);
       if list.is_global {
-        panic!();
+        shared.global_lists[list.id].push(value);
+      } else {
+        state.lists[list.id].push(value);
       }
-      let value = aux_value(data, state, &block.inputs["ITEM"], script);
-      state.lists[list.id].push(value);
     }
     "looks_setsizeto" => {
-      let size = aux_f64(data, state, &block.inputs["SIZE"], script);
+      let size = aux_f64(shared, data, state, &block.inputs["SIZE"], script);
       state.size = size;
     }
     _ => panic!("I don't know how to execute: {block:#?}"),
@@ -370,6 +383,7 @@ fn execute_block(
 }
 
 fn evaluate_block(
+  shared: &SharedState,
   data: &TargetData,
   state: &TargetState,
   id: usize,
@@ -378,71 +392,69 @@ fn evaluate_block(
   let block = &data.blocks[id - 1];
   match block.opcode.as_str() {
     "operator_add" => Value::Float(
-      aux_f64(data, state, &block.inputs["NUM1"], script)
-        + aux_f64(data, state, &block.inputs["NUM2"], script),
+      aux_f64(shared, data, state, &block.inputs["NUM1"], script)
+        + aux_f64(shared, data, state, &block.inputs["NUM2"], script),
     ),
     "operator_subtract" => Value::Float(
-      aux_f64(data, state, &block.inputs["NUM1"], script)
-        - aux_f64(data, state, &block.inputs["NUM2"], script),
+      aux_f64(shared, data, state, &block.inputs["NUM1"], script)
+        - aux_f64(shared, data, state, &block.inputs["NUM2"], script),
     ),
     "operator_multiply" => Value::Float(
-      aux_f64(data, state, &block.inputs["NUM1"], script)
-        * aux_f64(data, state, &block.inputs["NUM2"], script),
+      aux_f64(shared, data, state, &block.inputs["NUM1"], script)
+        * aux_f64(shared, data, state, &block.inputs["NUM2"], script),
     ),
     "operator_divide" => Value::Float(
-      aux_f64(data, state, &block.inputs["NUM1"], script)
-        / aux_f64(data, state, &block.inputs["NUM2"], script),
+      aux_f64(shared, data, state, &block.inputs["NUM1"], script)
+        / aux_f64(shared, data, state, &block.inputs["NUM2"], script),
     ),
     "operator_equals" => Value::Bool(
-      aux_value(data, state, &block.inputs["OPERAND1"], script).compare(&aux_value(
-        data,
-        state,
-        &block.inputs["OPERAND2"],
-        script,
-      )) == 0.,
+      aux_value(shared, data, state, &block.inputs["OPERAND1"], script).compare(
+        &aux_value(shared, data, state, &block.inputs["OPERAND2"], script),
+      ) == 0.,
     ),
     "operator_gt" => Value::Bool(
-      aux_value(data, state, &block.inputs["OPERAND1"], script).compare(&aux_value(
-        data,
-        state,
-        &block.inputs["OPERAND2"],
-        script,
-      )) > 0.,
+      aux_value(shared, data, state, &block.inputs["OPERAND1"], script).compare(
+        &aux_value(shared, data, state, &block.inputs["OPERAND2"], script),
+      ) > 0.,
     ),
     "operator_lt" => Value::Bool(
-      aux_value(data, state, &block.inputs["OPERAND1"], script).compare(&aux_value(
-        data,
-        state,
-        &block.inputs["OPERAND2"],
-        script,
-      )) < 0.,
+      aux_value(shared, data, state, &block.inputs["OPERAND1"], script).compare(
+        &aux_value(shared, data, state, &block.inputs["OPERAND2"], script),
+      ) < 0.,
     ),
     "operator_letter_of" => Value::String(aux_map_as_str(
+      shared,
       data,
       state,
       &block.inputs["STRING"],
       script,
       |s| {
         s.chars()
-          .nth(aux_f64(data, state, &block.inputs["LETTER"], script) as usize - 1)
+          .nth(
+            aux_f64(shared, data, state, &block.inputs["LETTER"], script) as usize - 1,
+          )
           .and_then(|c| Some(c.to_string()))
           .unwrap_or(format!(""))
       },
     )),
     "operator_and" => Value::Bool(
-      aux_bool(data, state, &block.inputs["OPERAND1"], script)
-        && aux_bool(data, state, &block.inputs["OPERAND2"], script),
+      aux_bool(shared, data, state, &block.inputs["OPERAND1"], script)
+        && aux_bool(shared, data, state, &block.inputs["OPERAND2"], script),
     ),
     "operator_or" => Value::Bool(
-      aux_bool(data, state, &block.inputs["OPERAND1"], script)
-        || aux_bool(data, state, &block.inputs["OPERAND2"], script),
+      aux_bool(shared, data, state, &block.inputs["OPERAND1"], script)
+        || aux_bool(shared, data, state, &block.inputs["OPERAND2"], script),
     ),
-    "operator_not" => {
-      Value::Bool(!aux_bool(data, state, &block.inputs["OPERAND"], script))
-    }
+    "operator_not" => Value::Bool(!aux_bool(
+      shared,
+      data,
+      state,
+      &block.inputs["OPERAND"],
+      script,
+    )),
     "operator_random" => Value::Float({
-      let from = aux_value(data, state, &block.inputs["FROM"], script);
-      let to = aux_value(data, state, &block.inputs["TO"], script);
+      let from = aux_value(shared, data, state, &block.inputs["FROM"], script);
+      let to = aux_value(shared, data, state, &block.inputs["TO"], script);
       let n_from = from.to_f64();
       let n_to = to.to_f64();
       let (low, high) = if n_from <= n_to {
@@ -459,36 +471,50 @@ fn evaluate_block(
       }
     }),
     "operator_join" => Value::String(aux_map_as_str(
+      shared,
       data,
       state,
       &block.inputs["STRING1"],
       script,
       |s1| {
-        aux_map_as_str(data, state, &block.inputs["STRING2"], script, |s2| {
-          format!("{s1}{s2}")
-        })
+        aux_map_as_str(
+          shared,
+          data,
+          state,
+          &block.inputs["STRING2"],
+          script,
+          |s2| format!("{s1}{s2}"),
+        )
       },
     )),
-    "operator_length" => {
-      Value::Float(
-        aux_map_as_str(data, state, &block.inputs["STRING"], script, |s| s.len())
-          as f64,
-      )
-    }
+    "operator_length" => Value::Float(aux_map_as_str(
+      shared,
+      data,
+      state,
+      &block.inputs["STRING"],
+      script,
+      |s| s.len(),
+    ) as f64),
     "operator_contains" => Value::Bool(aux_map_as_str(
+      shared,
       data,
       state,
       &block.inputs["STRING1"],
       script,
       |s1| {
-        aux_map_as_str(data, state, &block.inputs["STRING2"], script, |s2| {
-          s1.to_lowercase().contains(s2.to_lowercase().as_str())
-        })
+        aux_map_as_str(
+          shared,
+          data,
+          state,
+          &block.inputs["STRING2"],
+          script,
+          |s2| s1.to_lowercase().contains(s2.to_lowercase().as_str()),
+        )
       },
     )),
     "operator_mod" => Value::Float({
-      let n = aux_f64(data, state, &block.inputs["NUM1"], script);
-      let modulus = aux_f64(data, state, &block.inputs["NUM2"], script);
+      let n = aux_f64(shared, data, state, &block.inputs["NUM1"], script);
+      let modulus = aux_f64(shared, data, state, &block.inputs["NUM2"], script);
       let mut result = n % modulus;
       if result / modulus < 0. {
         result += modulus;
@@ -496,10 +522,10 @@ fn evaluate_block(
       result
     }),
     "operator_round" => {
-      Value::Float(aux_f64(data, state, &block.inputs["NUM"], script).round())
+      Value::Float(aux_f64(shared, data, state, &block.inputs["NUM"], script).round())
     }
     "operator_mathop" => {
-      let value = aux_f64(data, state, &block.inputs["NUM"], script);
+      let value = aux_f64(shared, data, state, &block.inputs["NUM"], script);
       Value::Float(aux_field(block, "OPERATOR", |operator| match operator {
         "abs" => value.abs(),
         "floor" => value.floor(),
@@ -550,7 +576,7 @@ fn evaluate_block(
         panic!();
       }
       let list = &state.lists[list.id];
-      let index = aux_f64(data, state, &block.inputs["INDEX"], script).floor();
+      let index = aux_f64(shared, data, state, &block.inputs["INDEX"], script).floor();
       if 0. < index && index <= list.len() as f64 {
         list[index as usize - 1].clone()
       } else {
@@ -584,61 +610,92 @@ fn truncate_float(value: f64) -> f64 {
   format!("{:.10}", value).parse().unwrap()
 }
 
+fn get_variable<'a>(
+  shared: &'a SharedState,
+  state: &'a TargetState,
+  variable: &VariableInput,
+) -> &'a Value {
+  if variable.is_global {
+    &shared.global_variables[variable.id]
+  } else {
+    &state.variables[variable.id]
+  }
+}
+
+fn set_variable<'a, F: FnOnce(&Value) -> Value>(
+  shared: &'a mut SharedState,
+  state: &'a mut TargetState,
+  variable: &'a VariableInput,
+  map: F,
+) {
+  if variable.is_global {
+    let value = map(&shared.global_variables[variable.id]);
+    shared.global_variables[variable.id] = value;
+  } else {
+    let value = map(&state.variables[variable.id]);
+    state.variables[variable.id] = value;
+  }
+}
+
 fn aux_f64(
+  shared: &SharedState,
   data: &TargetData,
   state: &TargetState,
   input: &Input,
   script: &Script,
 ) -> f64 {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id, script).to_f64(),
+    Input::Block(id) => evaluate_block(shared, data, state, *id, script).to_f64(),
     Input::Value(value) => value.to_f64(),
-    Input::Variable(variable) => state.variables[variable.id].to_f64(),
+    Input::Variable(variable) => get_variable(shared, state, variable).to_f64(),
     Input::Argument(argument) => get_argument(*argument, script).to_f64(),
     _ => 0.,
   }
 }
 
 fn aux_bool(
+  shared: &SharedState,
   data: &TargetData,
   state: &TargetState,
   input: &Input,
   script: &Script,
 ) -> bool {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id, script).to_bool(),
+    Input::Block(id) => evaluate_block(shared, data, state, *id, script).to_bool(),
     Input::Value(value) => value.to_bool(),
-    Input::Variable(variable) => state.variables[variable.id].to_bool(),
+    Input::Variable(variable) => get_variable(shared, state, variable).to_bool(),
     Input::Argument(argument) => get_argument(*argument, script).to_bool(),
     _ => false,
   }
 }
 
 fn aux_string(
+  shared: &SharedState,
   data: &TargetData,
   state: &TargetState,
   input: &Input,
   script: &Script,
 ) -> String {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id, script).to_string(),
+    Input::Block(id) => evaluate_block(shared, data, state, *id, script).to_string(),
     Input::Value(value) => value.to_string(),
-    Input::Variable(variable) => state.variables[variable.id].to_string(),
+    Input::Variable(variable) => get_variable(shared, state, variable).to_string(),
     Input::Argument(argument) => get_argument(*argument, script).to_string(),
     _ => panic!(),
   }
 }
 
 fn aux_value(
+  shared: &SharedState,
   data: &TargetData,
   state: &TargetState,
   input: &Input,
   script: &Script,
 ) -> Value {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id, script),
+    Input::Block(id) => evaluate_block(shared, data, state, *id, script),
     Input::Value(value) => value.clone(),
-    Input::Variable(variable) => state.variables[variable.id].clone(),
+    Input::Variable(variable) => get_variable(shared, state, variable).clone(),
     Input::Argument(argument) => get_argument(*argument, script).clone(),
     _ => panic!(),
   }
@@ -655,6 +712,7 @@ fn aux_field<T, F: FnOnce(&str) -> T>(block: &Block, name: &str, map: F) -> T {
 }
 
 fn aux_map_as_str<T, F: FnOnce(&str) -> T>(
+  shared: &SharedState,
   data: &TargetData,
   state: &TargetState,
   input: &Input,
@@ -662,9 +720,11 @@ fn aux_map_as_str<T, F: FnOnce(&str) -> T>(
   map: F,
 ) -> T {
   match input {
-    Input::Block(id) => evaluate_block(data, state, *id, script).map_as_str(map),
+    Input::Block(id) => {
+      evaluate_block(shared, data, state, *id, script).map_as_str(map)
+    }
     Input::Value(value) => value.map_as_str(map),
-    Input::Variable(variable) => state.variables[variable.id].map_as_str(map),
+    Input::Variable(variable) => get_variable(shared, state, variable).map_as_str(map),
     Input::Argument(argument) => get_argument(*argument, script).map_as_str(map),
     _ => panic!(),
   }

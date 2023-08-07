@@ -11,9 +11,9 @@ use serde::{Deserialize, Deserializer};
 use crate::block;
 use crate::block::CustomBlock;
 use crate::block::Value;
-use crate::project;
 use crate::project::Config;
 use crate::project::Texture;
+use crate::project::{self, SharedState};
 use crate::target;
 use serde::de::SeqAccess;
 use serde::de::Visitor;
@@ -370,12 +370,12 @@ pub fn load<'a>(
         block.inputs.insert(
           key.clone(),
           if let Some(id) = &field.id {
-            if target.variables.contains_key(id) {
+            if key == "VARIABLE" {
               Input::Variable(VariableInput {
                 name: format!("ghost"),
                 id: id.clone(),
               })
-            } else if target.lists.contains_key(id) {
+            } else if key == "LIST" {
               Input::List(ListInput {
                 name: format!("ghost"),
                 id: id.clone(),
@@ -396,6 +396,10 @@ pub fn load<'a>(
     target_name_to_target_index: HashMap::with_capacity(json_project.targets.len()), // DONE
     targets: Vec::with_capacity(json_project.targets.len()), // DONE
     textures: Vec::new(),                                    // DONE
+    shared_state: SharedState {
+      global_variables: Vec::new(),
+      global_lists: Vec::new(),
+    },
   };
   let json_stage = &json_project.targets[0];
   let mut global_variables_id_to_index: HashMap<&String, usize> =
@@ -403,12 +407,17 @@ pub fn load<'a>(
   let mut global_lists_id_to_index: HashMap<&String, usize> =
     HashMap::with_capacity(json_stage.lists.len());
   let mut index = 0;
-  for id in json_stage.variables.keys() {
+  for (id, variable) in &json_stage.variables {
+    project
+      .shared_state
+      .global_variables
+      .push(variable.value.clone());
     global_variables_id_to_index.insert(&id, index);
     index += 1;
   }
   let mut index = 0;
-  for id in json_stage.lists.keys() {
+  for (id, list) in &json_stage.lists {
+    project.shared_state.global_lists.push(list.value.clone());
     global_lists_id_to_index.insert(&id, index);
     index += 1;
   }
